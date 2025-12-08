@@ -7,9 +7,17 @@ ast = true
 build_info = true
 extra_output = ["storageLayout"]
 fs_permissions = [{ access = "read-write", path = "../"}]
-gas_reports = ["EnergyBiddingMarket", "DoNotRun"]
+gas_reports = ["EnergyBiddingMarket"]
+
+# Optimizer settings for gas efficiency
+optimizer = true
+optimizer_runs = 200
+
+# Solidity version
+solc_version = "0.8.24"
 
 [etherscan]
-arbitrum-sepolia = {key = "WWQ7TEHXAYKHJCN6IF82HW2EWX8X135482"}
+# Use environment variable for API key: ETHERSCAN_API_KEY
+arbitrum-sepolia = {key = "${ETHERSCAN_API_KEY}"}
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

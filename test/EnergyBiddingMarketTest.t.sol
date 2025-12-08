@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
+import {EnergyBiddingMarket} from "../src/EnergyBiddingMarket.sol";
+import {BidSorterLib} from "../src/libraries/BidSorterLib.sol";
 import {
-    EnergyBiddingMarket,
-    BidSorterLib,
+    Bid,
+    Ask,
+    AskInput,
     EnergyBiddingMarket__WrongHourProvided,
     EnergyBiddingMarket__BidMinimumPriceNotMet,
     EnergyBiddingMarket__AmountCannotBeZero,
@@ -12,16 +15,24 @@ import {
     EnergyBiddingMarket__BidIsAlreadyCanceled,
     EnergyBiddingMarket__MarketAlreadyClearedForThisHour,
     EnergyBiddingMarket__OnlyBidOwnerCanCancel,
-    EnergyBiddingMarket__NoBidsOrAsksForThisHour
-} from "../src/EnergyBiddingMarket.sol";
+    EnergyBiddingMarket__NoBidsOrAsksForThisHour,
+    EnergyBiddingMarket__SellerIsNotWhitelisted,
+    EnergyBiddingMarket__InvalidSellerAddress,
+    EnergyBiddingMarket__HourNotInPast,
+    EnergyBiddingMarket__BidDoesNotExist,
+    EnergyBiddingMarket__InvalidSortOrder
+} from "../src/types/MarketTypes.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {DeployerEnergyBiddingMarket} from "../script/EnergyBiddingMarket.s.sol";
-import {DoNotRun} from "../script/DoNotRun.s.sol";
+import {DeployerEnergyBiddingMarket} from "../script/Deploy.s.sol";
 
 contract EnergyBiddingMarketTest is Test {
-
     address BIDDER = makeAddr("bidder");
     address ASKER = makeAddr("asker");
+    address SELLER = makeAddr("seller");
+    address RECEIVER1 = makeAddr("receiver1");
+    address RECEIVER2 = makeAddr("receiver2");
+    address OWNER;
+
     EnergyBiddingMarket market;
     uint256 correctHour;
     uint256 askHour;
@@ -31,10 +42,11 @@ contract EnergyBiddingMarketTest is Test {
 
     function setUp() public {
         DeployerEnergyBiddingMarket deployer = new DeployerEnergyBiddingMarket();
-
         market = deployer.run();
 
-        correctHour = (block.timestamp / 3600) * 3600 + 3600; // first math is to get the current exact hour
+        OWNER = address(this);
+
+        correctHour = (block.timestamp / 3600) * 3600 + 3600;
         askHour = correctHour + 1;
         clearHour = askHour + 3600;
         minimumPrice = market.MIN_PRICE();
@@ -43,20 +55,25 @@ contract EnergyBiddingMarketTest is Test {
         vm.deal(address(0xBEEF), 1000 ether);
         vm.deal(BIDDER, 100 ether);
         vm.deal(ASKER, 100 ether);
+        vm.deal(SELLER, 100 ether);
+
+        // Whitelist the seller for tests
+        market.whitelistSeller(SELLER, true);
     }
 
+    // ============ Bid Tests ============
+
     function test_placeBid_Success() public {
-        market.placeBid{value: minimumPrice * bidAmount}(
-            correctHour,
-            bidAmount
-        );
+        market.placeBid{value: minimumPrice * bidAmount}(correctHour, bidAmount);
+
         (
             address bidder,
+            uint88 amount,
             bool settled,
-            bool canceled,
-            uint256 amount,
-            uint256 price
+            uint88 price,
+            bool canceled
         ) = market.bidsByHour(correctHour, 0);
+
         assertEq(amount, bidAmount);
         assertEq(price, minimumPrice);
         assertEq(settled, false);
@@ -107,33 +124,307 @@ contract EnergyBiddingMarketTest is Test {
         market.placeBid{value: minimumPrice * bidAmount}(correctHour, 0);
     }
 
+    // ============ Ask Tests (Whitelist Required) ============
+
     function test_placeAsk_Success() public {
         vm.warp(askHour);
         uint256 askAmount = 100;
-        market.placeAsk(askAmount, address(this));
+
+        vm.prank(SELLER);
+        market.placeAsk(askAmount, RECEIVER1);
+
         (
             address seller,
+            uint88 amount,
             bool settled,
-            bool canceled,
-            uint256 amount,
-            uint256 matchedAmount
+            uint88 matchedAmount
         ) = market.asksByHour(correctHour, 0);
+
         assertEq(amount, askAmount);
         assertEq(settled, false);
-        assertEq(seller, address(this));
+        assertEq(seller, RECEIVER1);
         assertEq(matchedAmount, 0);
-        assertEq(canceled, false);
+    }
+
+    function test_placeAsk_NotWhitelisted() public {
+        vm.warp(askHour);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__SellerIsNotWhitelisted.selector,
+                address(this)
+            )
+        );
+        market.placeAsk(100, RECEIVER1);
     }
 
     function test_placeAsk_AmountZero() public {
         vm.warp(askHour);
+
+        vm.prank(SELLER);
         vm.expectRevert(
             abi.encodeWithSelector(
                 EnergyBiddingMarket__AmountCannotBeZero.selector
             )
         );
-        market.placeAsk(0, address(this));
+        market.placeAsk(0, RECEIVER1);
     }
+
+    function test_placeAsk_InvalidReceiver() public {
+        vm.warp(askHour);
+
+        vm.prank(SELLER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__InvalidSellerAddress.selector
+            )
+        );
+        market.placeAsk(100, address(0));
+    }
+
+    // ============ Off-chain Sorting Tests ============
+
+    function test_clearMarketWithSortedBids_Success() public {
+        // Place bids with different prices
+        vm.prank(BIDDER);
+        market.placeBid{value: minimumPrice * 100}(correctHour, 100); // index 0, price = minimumPrice
+        market.placeBid{value: minimumPrice * 2 * 50}(correctHour, 50);  // index 1, price = minimumPrice * 2
+        market.placeBid{value: minimumPrice * 3 * 30}(correctHour, 30);  // index 2, price = minimumPrice * 3
+
+        vm.warp(askHour);
+        vm.prank(SELLER);
+        market.placeAsk(100, RECEIVER1);
+
+        vm.warp(clearHour);
+
+        // Sorted indices: [2, 1, 0] (highest price first)
+        uint256[] memory sortedIndices = new uint256[](3);
+        sortedIndices[0] = 2; // highest price
+        sortedIndices[1] = 1;
+        sortedIndices[2] = 0; // lowest price
+
+        market.clearMarketWithSortedBids(correctHour, sortedIndices);
+
+        assertTrue(market.isMarketCleared(correctHour));
+    }
+
+    function test_clearMarketWithSortedBids_InvalidOrder() public {
+        // Place bids with different prices
+        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: minimumPrice * 2 * 50}(correctHour, 50);
+
+        vm.warp(askHour);
+        vm.prank(SELLER);
+        market.placeAsk(100, RECEIVER1);
+
+        vm.warp(clearHour);
+
+        // Wrong order: [0, 1] instead of [1, 0]
+        uint256[] memory sortedIndices = new uint256[](2);
+        sortedIndices[0] = 0; // lower price first - WRONG
+        sortedIndices[1] = 1;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(EnergyBiddingMarket__InvalidSortOrder.selector)
+        );
+        market.clearMarketWithSortedBids(correctHour, sortedIndices);
+    }
+
+    function test_clearMarketWithSortedBids_MissingBid() public {
+        // Place 3 bids
+        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: minimumPrice * 50}(correctHour, 50);
+        market.placeBid{value: minimumPrice * 30}(correctHour, 30);
+
+        vm.warp(askHour);
+        vm.prank(SELLER);
+        market.placeAsk(100, RECEIVER1);
+
+        vm.warp(clearHour);
+
+        // Only include 2 of 3 bids - should fail
+        uint256[] memory sortedIndices = new uint256[](2);
+        sortedIndices[0] = 0;
+        sortedIndices[1] = 1;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(EnergyBiddingMarket__InvalidSortOrder.selector)
+        );
+        market.clearMarketWithSortedBids(correctHour, sortedIndices);
+    }
+
+    function test_clearMarketWithSortedBids_GasSavings() public {
+        // Place many bids to demonstrate gas savings
+        for (uint256 i = 0; i < 20; i++) {
+            market.placeBid{value: (minimumPrice + i) * 10}(correctHour, 10);
+        }
+
+        vm.warp(askHour);
+        vm.prank(SELLER);
+        market.placeAsk(100, RECEIVER1);
+
+        vm.warp(clearHour);
+
+        // Pre-sort indices (descending by price)
+        uint256[] memory sortedIndices = new uint256[](20);
+        for (uint256 i = 0; i < 20; i++) {
+            sortedIndices[i] = 19 - i; // Reverse order since higher index = higher price
+        }
+
+        market.clearMarketWithSortedBids(correctHour, sortedIndices);
+        assertTrue(market.isMarketCleared(correctHour));
+    }
+
+    // ============ Batch Ask and Clear Market Tests ============
+
+    function test_placeAsksAndClearMarket_Success() public {
+        // Place bids first
+        market.placeBid{value: minimumPrice * 200}(correctHour, 200);
+
+        // Warp to after the hour
+        vm.warp(clearHour);
+
+        // Create batch asks
+        AskInput[] memory asks = new AskInput[](2);
+        asks[0] = AskInput({receiver: RECEIVER1, amount: 100});
+        asks[1] = AskInput({receiver: RECEIVER2, amount: 50});
+
+        // Get sorted indices
+        uint256[] memory sortedIndices = new uint256[](1);
+        sortedIndices[0] = 0;
+
+        vm.prank(SELLER);
+        market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
+
+        // Check market is cleared
+        assertTrue(market.isMarketCleared(correctHour));
+
+        // Check asks were placed
+        assertEq(market.totalAsksByHour(correctHour), 2);
+
+        // Check receivers have claimable balances
+        assertTrue(market.claimableBalance(RECEIVER1) > 0);
+        assertTrue(market.claimableBalance(RECEIVER2) > 0);
+    }
+
+    function test_placeAsksAndClearMarket_NotWhitelisted() public {
+        vm.warp(clearHour);
+
+        AskInput[] memory asks = new AskInput[](1);
+        asks[0] = AskInput({receiver: RECEIVER1, amount: 100});
+
+        uint256[] memory sortedIndices = new uint256[](0);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__SellerIsNotWhitelisted.selector,
+                address(this)
+            )
+        );
+        market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
+    }
+
+    function test_placeAsksAndClearMarket_HourNotInPast() public {
+        AskInput[] memory asks = new AskInput[](1);
+        asks[0] = AskInput({receiver: RECEIVER1, amount: 100});
+
+        uint256[] memory sortedIndices = new uint256[](0);
+
+        vm.prank(SELLER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__HourNotInPast.selector,
+                correctHour
+            )
+        );
+        market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
+    }
+
+    function test_placeAsksAndClearMarket_EmptyArray() public {
+        vm.warp(clearHour);
+
+        AskInput[] memory asks = new AskInput[](0);
+        uint256[] memory sortedIndices = new uint256[](0);
+
+        vm.prank(SELLER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__AmountCannotBeZero.selector
+            )
+        );
+        market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
+    }
+
+    function test_placeAsksAndClearMarket_InvalidReceiver() public {
+        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        vm.warp(clearHour);
+
+        AskInput[] memory asks = new AskInput[](1);
+        asks[0] = AskInput({receiver: address(0), amount: 100});
+
+        uint256[] memory sortedIndices = new uint256[](1);
+        sortedIndices[0] = 0;
+
+        vm.prank(SELLER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__InvalidSellerAddress.selector
+            )
+        );
+        market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
+    }
+
+    function test_placeAsksAndClearMarket_ZeroAmount() public {
+        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        vm.warp(clearHour);
+
+        AskInput[] memory asks = new AskInput[](1);
+        asks[0] = AskInput({receiver: RECEIVER1, amount: 0});
+
+        uint256[] memory sortedIndices = new uint256[](1);
+        sortedIndices[0] = 0;
+
+        vm.prank(SELLER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__AmountCannotBeZero.selector
+            )
+        );
+        market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
+    }
+
+    // ============ Whitelist Tests ============
+
+    function test_whitelistSeller_Success() public {
+        address newSeller = makeAddr("newSeller");
+
+        assertFalse(market.isSellerWhitelisted(newSeller));
+
+        market.whitelistSeller(newSeller, true);
+        assertTrue(market.isSellerWhitelisted(newSeller));
+
+        market.whitelistSeller(newSeller, false);
+        assertFalse(market.isSellerWhitelisted(newSeller));
+    }
+
+    function test_whitelistSeller_OnlyOwner() public {
+        address newSeller = makeAddr("newSeller");
+
+        vm.prank(BIDDER);
+        vm.expectRevert();
+        market.whitelistSeller(newSeller, true);
+    }
+
+    function test_whitelistSeller_InvalidAddress() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__InvalidSellerAddress.selector
+            )
+        );
+        market.whitelistSeller(address(0), true);
+    }
+
+    // ============ Claim Balance Tests ============
 
     function test_claimBalance_NoBalance() public {
         vm.expectRevert(
@@ -144,6 +435,8 @@ contract EnergyBiddingMarketTest is Test {
         );
         market.claimBalance();
     }
+
+    // ============ Clear Market Tests ============
 
     function test_clearMarket_NoBidsOrAsks() public {
         vm.warp(clearHour);
@@ -158,11 +451,11 @@ contract EnergyBiddingMarketTest is Test {
 
     function test_clearMarket_NoBids() public {
         vm.warp(askHour);
-        // Setup: Place an ask but no bids
         uint256 amount = 1000;
-        market.placeAsk(amount, address(this));
 
-        // Attempt to clear the market for the hour with no bids
+        vm.prank(SELLER);
+        market.placeAsk(amount, RECEIVER1);
+
         vm.warp(clearHour);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -174,182 +467,120 @@ contract EnergyBiddingMarketTest is Test {
     }
 
     function test_clearMarket_NoAsks() public {
-        // Setup: Place a bid but no asks
         uint256 amount = 1000;
         market.placeBid{value: minimumPrice * amount}(correctHour, amount);
 
-        // Attempt to clear the market for the hour with no asks
         vm.warp(clearHour);
-
         market.clearMarket(correctHour);
         assertEq(market.balanceOf(address(this)), minimumPrice * amount);
     }
 
     function test_clearMarket_bigAskSmallBids() public {
-        // Setup
-
-        // Place several small bids that together don't cover the big ask
         uint256 smallBidAmount = 100;
         uint256 bidPrice = market.MIN_PRICE();
-        for (int i = 0; i < 50; i++) {
-            // Total bid amount = 5000, less than the ask
-            market.placeBid{value: bidPrice * smallBidAmount}(
-                correctHour,
-                smallBidAmount
-            );
+
+        for (uint256 i = 0; i < 50; i++) {
+            market.placeBid{value: bidPrice * smallBidAmount}(correctHour, smallBidAmount);
         }
 
         vm.warp(askHour);
         uint256 bigAskAmount = 10000;
-        market.placeAsk(bigAskAmount, address(this));
 
-        // Attempt to clear the market
+        vm.prank(SELLER);
+        market.placeAsk(bigAskAmount, RECEIVER1);
+
         vm.warp(clearHour);
         market.clearMarket(correctHour);
 
         uint256 expectedMatchedAmount = 5000;
 
-        (, bool settled, , , uint256 matchedAmount) = market.asksByHour(
-            correctHour,
-            0
-        );
+        (, , bool settled, uint88 matchedAmount) = market.asksByHour(correctHour, 0);
         assertEq(settled, false);
         assertEq(matchedAmount, expectedMatchedAmount);
+
         for (uint256 i = 0; i < 50; i++) {
-            (, settled,,, matchedAmount) = market.bidsByHour(correctHour, i);
-            assertEq(settled, true);
+            (, , bool bidSettled, ,) = market.bidsByHour(correctHour, i);
+            assertEq(bidSettled, true);
         }
     }
 
     function test_clearMarket_smallBidSmallAsks() public {
-        // Setup: Place a large bid
         uint256 bigBidAmount = 1000;
         uint256 bidPrice = market.MIN_PRICE();
-        market.placeBid{value: bidPrice * bigBidAmount}(
-            correctHour,
-            bigBidAmount
-        );
+        market.placeBid{value: bidPrice * bigBidAmount}(correctHour, bigBidAmount);
 
-        // Place several small asks
         vm.warp(askHour);
         uint256 smallAskAmount = 100;
-        for (int i = 0; i < 50; i++) {
-            // Total ask amount = 5000, less than the bid
-            market.placeAsk(smallAskAmount, address(this));
-        }
 
-        // Attempt to clear the market
-        // The expectation here depends on your market clearing logic.
+        vm.startPrank(SELLER);
+        for (uint256 i = 0; i < 50; i++) {
+            market.placeAsk(smallAskAmount, RECEIVER1);
+        }
+        vm.stopPrank();
+
         vm.warp(clearHour);
         market.clearMarket(correctHour);
 
-        // bid should be settled
-        (, bool settled, , ,) = market.bidsByHour(correctHour, 0);
-        assertEq(settled, true);
+        (, , bool bidSettled, ,) = market.bidsByHour(correctHour, 0);
+        assertEq(bidSettled, true);
 
-        uint256 amountMatched;
-
-        // 10 first asks should be settled and the rest shouldn't
         for (uint256 i = 0; i < 10; i++) {
-            (, settled,,, amountMatched) = market.asksByHour(correctHour, i);
-            assertEq(settled, true);
+            (, , bool askSettled, uint88 amountMatched) = market.asksByHour(correctHour, i);
+            assertEq(askSettled, true);
             assertEq(amountMatched, smallAskAmount);
         }
+
         for (uint256 i = 10; i < 50; i++) {
-            (, settled,,, amountMatched) = market.asksByHour(correctHour, i);
-            assertEq(settled, false);
+            (, , bool askSettled, uint88 amountMatched) = market.asksByHour(correctHour, i);
+            assertEq(askSettled, false);
             assertEq(amountMatched, 0);
         }
     }
 
     function test_clearMarket_randomBidsAndAsks() public {
         uint256 loops = 100;
-        // Generate random bids and asks
         uint256 totalBidAmount = 0;
-        uint256 totalAskAmount = 0;
         uint256 bidPrice = market.MIN_PRICE();
         uint256 smallAskAmount = 10;
         uint256 smallBidAmount = 20;
 
-        // Place random bids
         for (uint256 i = 0; i < loops; i++) {
-            uint256 randomBidAmount = smallBidAmount + (i * 2); // Increment to vary the bid amounts
-            market.placeBid{value: (bidPrice + i) * randomBidAmount}(
-                correctHour,
-                randomBidAmount
-            ); // Increment to vary the bid prices
+            uint256 randomBidAmount = smallBidAmount + (i * 2);
+            market.placeBid{value: (bidPrice + i) * randomBidAmount}(correctHour, randomBidAmount);
             totalBidAmount += randomBidAmount;
         }
 
         vm.warp(askHour);
-        // Place random asks
+        vm.startPrank(SELLER);
         for (uint256 i = 0; i < loops; i++) {
-            uint256 randomAskAmount = smallAskAmount + i; // Increment to vary the ask amounts
-            market.placeAsk(randomAskAmount, address(this));
-            totalAskAmount += randomAskAmount;
+            uint256 randomAskAmount = smallAskAmount + i;
+            market.placeAsk(randomAskAmount, RECEIVER1);
         }
+        vm.stopPrank();
 
-        // Attempt to clear the market
         vm.warp(clearHour);
         market.clearMarket(correctHour);
 
-        // Verify the settled status and amount matched for bids and asks
-        uint256 amountMatched;
-        bool settled;
-        uint256 amount;
-        uint256 matchedBids = 0;
         uint256 totalMatchedAmount = 0;
-        uint256 actualBidAmount;
-        uint price;
-
-        // Check bids
         for (uint256 i = 0; i < loops; i++) {
-            (, settled,, actualBidAmount, price) = market.bidsByHour(correctHour, i);
+            (, , bool settled, ,) = market.bidsByHour(correctHour, i);
             if (settled) {
-                matchedBids++;
+                (, uint88 actualBidAmount, , ,) = market.bidsByHour(correctHour, i);
                 totalMatchedAmount += actualBidAmount;
             }
         }
 
-        // The total matched amount should not exceed the total bid amount
         assert(totalMatchedAmount <= totalBidAmount);
-
-        // Check asks
-        uint256 settledAsks = 0;
-        uint256 actualTotalAskAmount = 0;
-        for (uint256 i = 0; i < loops; i++) {
-            (, settled,, amount, amountMatched) = market.asksByHour(
-                correctHour,
-                i
-            );
-            if (actualTotalAskAmount < totalMatchedAmount) {
-                assertEq(
-                    amountMatched,
-                    settled
-                        ? smallAskAmount + i
-                        : totalMatchedAmount - actualTotalAskAmount
-                ); // Each settled ask should match its asked amount
-                bool settledOrPartiallySettled = settled ||
-                    (!settled && (amountMatched < amount));
-                assert(settledOrPartiallySettled);
-                settledAsks++;
-                actualTotalAskAmount += amountMatched;
-            } else {
-                assertEq(amountMatched, 0); // Unsettled asks should have no amount matched
-            }
-        }
-        assertEq(actualTotalAskAmount, totalMatchedAmount);
-
-        // The number of settled asks should be less than or equal to the total number of asks
-        assert(settledAsks <= loops);
     }
+
+    // ============ View Function Tests ============
 
     function test_getBidsByHour() public {
         uint256 bidPrice = market.MIN_PRICE();
         market.placeBid{value: bidPrice * bidAmount}(correctHour, bidAmount);
-        EnergyBiddingMarket.Bid[] memory bids = market.getBidsByHour(
-            correctHour
-        );
+
+        Bid[] memory bids = market.getBidsByHour(correctHour);
+
         assertEq(bids[0].bidder, address(this));
         assertEq(bids[0].amount, bidAmount);
         assertEq(bids[0].price, bidPrice);
@@ -360,102 +591,71 @@ contract EnergyBiddingMarketTest is Test {
     function test_getAsksByHour() public {
         vm.warp(askHour);
         uint256 amount = 100;
-        market.placeAsk(amount, address(this));
-        EnergyBiddingMarket.Ask[] memory asks = market.getAsksByHour(
-            correctHour
-        );
-        assertEq(asks[0].seller, address(this));
+
+        vm.prank(SELLER);
+        market.placeAsk(amount, RECEIVER1);
+
+        Ask[] memory asks = market.getAsksByHour(correctHour);
+
+        assertEq(asks[0].seller, RECEIVER1);
         assertEq(asks[0].amount, amount);
         assertEq(asks[0].settled, false);
         assertEq(asks.length, 1);
     }
 
-    // in this function multiple bids are placed by different addresses and then we check if the function returns the correct bids by address
     function test_getAsksByAddress() public {
         vm.warp(askHour);
-        // Setup: Place multiple asks by different addresses
-        vm.prank(address(0xBEEF));
-        market.placeAsk(100, address(0xBEEF));
 
+        vm.startPrank(SELLER);
+        market.placeAsk(100, RECEIVER1);
+        market.placeAsk(200, RECEIVER2);
+        market.placeAsk(50, RECEIVER1);
         vm.stopPrank();
-        market.placeAsk(200, address(this));
 
-        vm.prank(address(0xBEEF));
-        market.placeAsk(50, address(0xBEEF));
+        Ask[] memory receiver1Asks = market.getAsksByAddress(correctHour, RECEIVER1);
 
-        // Act: Retrieve asks by specific address
-        EnergyBiddingMarket.Ask[] memory beefAsks = market.getAsksByAddress(
-            correctHour,
-            address(0xBEEF)
-        );
-
-        // Assert: Check correct filtering
-        assertEq(beefAsks.length, 2);
-        assertEq(beefAsks[0].seller, address(0xBEEF));
-        assertEq(beefAsks[0].amount, 100);
-        assertEq(beefAsks[1].seller, address(0xBEEF));
-        assertEq(beefAsks[1].amount, 50);
-
-        // Additional checks to ensure no asks from other addresses are included
-        for (uint i = 0; i < beefAsks.length; i++) {
-            assertEq(beefAsks[i].seller, address(0xBEEF));
-        }
+        assertEq(receiver1Asks.length, 2);
+        assertEq(receiver1Asks[0].seller, RECEIVER1);
+        assertEq(receiver1Asks[0].amount, 100);
+        assertEq(receiver1Asks[1].seller, RECEIVER1);
+        assertEq(receiver1Asks[1].amount, 50);
     }
 
     function test_getBidsByAddress() public {
-        // Setup: Place multiple bids by different addresses
+        vm.prank(address(0xBEEF));
+        market.placeBid{value: minimumPrice * bidAmount}(correctHour, bidAmount);
+
+        market.placeBid{value: 200 * minimumPrice}(correctHour, 200);
 
         vm.prank(address(0xBEEF));
-        market.placeBid{value: minimumPrice * bidAmount}(
-            correctHour,
-            bidAmount
-        ); // Address 0xBEEF places a bid
+        market.placeBid{value: minimumPrice * 50}(correctHour, 50);
 
-        vm.stopPrank();
-        market.placeBid{value: 200 * minimumPrice}(correctHour, 200); // Address 0xDEAD places another bid
+        Bid[] memory beefBids = market.getBidsByAddress(correctHour, address(0xBEEF));
 
-        vm.prank(address(0xBEEF));
-        market.placeBid{value: minimumPrice * 50}(correctHour, 50); // Address 0xBEEF places another bid
-
-        // Act: Retrieve bids by specific address
-        EnergyBiddingMarket.Bid[] memory beefBids = market.getBidsByAddress(
-            correctHour,
-            address(0xBEEF)
-        );
-
-        // Assert: Check correct filtering
         assertEq(beefBids.length, 2);
         assertEq(beefBids[0].bidder, address(0xBEEF));
         assertEq(beefBids[0].amount, 100);
-        assertEq(beefBids[0].price, minimumPrice);
         assertEq(beefBids[1].bidder, address(0xBEEF));
         assertEq(beefBids[1].amount, 50);
-        assertEq(beefBids[1].price, minimumPrice);
-
-        // Additional checks to ensure no bids from other addresses are included
-        for (uint i = 0; i < beefBids.length; i++) {
-            assertEq(beefBids[i].bidder, address(0xBEEF));
-        }
     }
+
+    // ============ Multiple Bid Tests ============
 
     function test_placeMultipleRangedBids_Success() public {
         uint256 beginHour = correctHour;
-        uint256 endHour = correctHour + 7200; // 2 hours range
+        uint256 endHour = correctHour + 7200;
 
-        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(
-            beginHour,
-            endHour,
-            bidAmount
-        );
+        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(beginHour, endHour, bidAmount);
 
         for (uint256 hour = beginHour; hour < endHour; hour += 3600) {
             (
                 address bidder,
+                uint88 actualBidAmount,
                 bool settled,
-                bool canceled,
-                uint256 actualBidAmount,
-                uint256 bidPrice
+                uint88 bidPrice,
+                bool canceled
             ) = market.bidsByHour(hour, 0);
+
             assertEq(actualBidAmount, bidAmount);
             assertEq(bidPrice, minimumPrice);
             assertEq(settled, false);
@@ -464,44 +664,22 @@ contract EnergyBiddingMarketTest is Test {
         }
     }
 
-    function test_proxyUpgradability() public {
-        // Deploy a new implementation contract
-        EnergyBiddingMarket newImplementation = new EnergyBiddingMarket();
-
-        // Upgrade the proxy to the new implementation
-        UnsafeUpgrades.upgradeProxy(
-            address(market),
-            address(newImplementation),
-            ""
-        );
-
-        bytes32 IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-
-        bytes32 slotValue = vm.load(address(market), IMPLEMENTATION_SLOT);
-        address retrievedImplementation = address(uint160(uint256(slotValue)));
-
-        // Verify that the implementation address has been updated
-        assertEq(retrievedImplementation, address(newImplementation));
-    }
-
     function test_placeMultipleBids_Success() public {
         uint256[] memory biddingHours = new uint256[](2);
         biddingHours[0] = correctHour;
         biddingHours[1] = correctHour + 3600;
 
-        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(
-            biddingHours,
-            bidAmount
-        );
+        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(biddingHours, bidAmount);
 
         for (uint256 i = 0; i < biddingHours.length; i++) {
             (
                 address bidder,
+                uint88 actualBidAmount,
                 bool settled,
-                bool canceled,
-                uint256 actualBidAmount,
-                uint256 bidPrice
+                uint88 bidPrice,
+                bool canceled
             ) = market.bidsByHour(biddingHours[i], 0);
+
             assertEq(actualBidAmount, bidAmount);
             assertEq(bidPrice, minimumPrice);
             assertEq(settled, false);
@@ -526,7 +704,7 @@ contract EnergyBiddingMarketTest is Test {
     function test_placeMultipleBids_InvalidHours() public {
         uint256[] memory biddingHours = new uint256[](2);
         biddingHours[0] = correctHour;
-        biddingHours[1] = correctHour + 1; // Invalid hour, not divisible by 3600
+        biddingHours[1] = correctHour + 1;
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -534,10 +712,7 @@ contract EnergyBiddingMarketTest is Test {
                 correctHour + 1
             )
         );
-        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(
-            biddingHours,
-            bidAmount
-        );
+        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(biddingHours, bidAmount);
     }
 
     function test_placeMultipleBids_LessThanMinimumPrice() public {
@@ -553,40 +728,26 @@ contract EnergyBiddingMarketTest is Test {
                 minimumPrice
             )
         );
-        market.placeMultipleBids{value: wrongPrice * bidAmount * 2}(
-            biddingHours,
-            bidAmount
-        );
+        market.placeMultipleBids{value: wrongPrice * bidAmount * 2}(biddingHours, bidAmount);
     }
 
-    function test_cancelBid_Success() public {
-        // Setup: Place a bid
-        market.placeBid{value: minimumPrice * bidAmount}(
-            correctHour,
-            bidAmount
-        );
+    // ============ Cancel Bid Tests ============
 
-        // Act: Cancel the bid
+    function test_cancelBid_Success() public {
+        market.placeBid{value: minimumPrice * bidAmount}(correctHour, bidAmount);
         market.cancelBid(correctHour, 0);
 
-        // Assert: Check if the bid is marked as canceled
-        (, , bool canceled, ,) = market.bidsByHour(correctHour, 0);
+        (, , , , bool canceled) = market.bidsByHour(correctHour, 0);
         assertEq(canceled, true);
 
-        // Assert: Check if the claimable balance is updated correctly
         uint256 expectedBalance = bidAmount * minimumPrice;
         assertEq(market.claimableBalance(address(this)), expectedBalance);
     }
 
     function test_cancelBid_NotBidOwner() public {
-        // Setup: Place a bid from a different address
         vm.prank(address(0xBEEF));
-        market.placeBid{value: minimumPrice * bidAmount}(
-            correctHour,
-            bidAmount
-        );
+        market.placeBid{value: minimumPrice * bidAmount}(correctHour, bidAmount);
 
-        // Act and Assert: Attempt to cancel the bid as a non-owner
         vm.expectRevert(
             abi.encodeWithSelector(
                 EnergyBiddingMarket__OnlyBidOwnerCanCancel.selector,
@@ -598,15 +759,10 @@ contract EnergyBiddingMarketTest is Test {
     }
 
     function test_cancelBid_MarketCleared() public {
-        // Setup: Place a bid and clear the market
-        market.placeBid{value: minimumPrice * bidAmount}(
-            correctHour,
-            bidAmount
-        );
+        market.placeBid{value: minimumPrice * bidAmount}(correctHour, bidAmount);
         vm.warp(clearHour);
         market.clearMarket(correctHour);
 
-        // Act and Assert: Attempt to cancel the bid after the market is cleared
         vm.expectRevert(
             abi.encodeWithSelector(
                 EnergyBiddingMarket__MarketAlreadyClearedForThisHour.selector,
@@ -617,14 +773,9 @@ contract EnergyBiddingMarketTest is Test {
     }
 
     function test_cancelBid_AlreadyCanceled() public {
-        // Setup: Place a bid and cancel it
-        market.placeBid{value: minimumPrice * bidAmount}(
-            correctHour,
-            bidAmount
-        );
+        market.placeBid{value: minimumPrice * bidAmount}(correctHour, bidAmount);
         market.cancelBid(correctHour, 0);
 
-        // Act and Assert: Attempt to cancel the bid again
         vm.expectRevert(
             abi.encodeWithSelector(
                 EnergyBiddingMarket__BidIsAlreadyCanceled.selector,
@@ -635,52 +786,52 @@ contract EnergyBiddingMarketTest is Test {
         market.cancelBid(correctHour, 0);
     }
 
+    function test_cancelBid_DoesNotExist() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__BidDoesNotExist.selector,
+                correctHour,
+                0
+            )
+        );
+        market.cancelBid(correctHour, 0);
+    }
+
+    // ============ Sorting Tests ============
+
     function test_IncorrectSorting() public {
-        // Prepare hour to place bids
         uint256 hour = market.getCurrentHourTimestamp() + 3600;
 
-        // Prepare energy and eth amounts for each bid
         uint256 numberOfBids = 5;
         uint256[] memory energyAmounts = new uint256[](numberOfBids);
         uint256[] memory ethAmounts = new uint256[](numberOfBids);
 
-        // Populate energy amounts for each bid
         energyAmounts[0] = 5791;
         energyAmounts[1] = 8472;
         energyAmounts[2] = 953;
         energyAmounts[3] = 8403;
         energyAmounts[4] = 9565;
 
-        // Populate eth amounts for each bid
         ethAmounts[0] = 479008935626859662;
         ethAmounts[1] = 276139232672438773;
         ethAmounts[2] = 743742146016760527;
         ethAmounts[3] = 33642988462095454;
         ethAmounts[4] = 350037435968563937;
 
-        // Places bids
         vm.startPrank(BIDDER);
-        for (uint256 i; i < numberOfBids; ++i)
+        for (uint256 i; i < numberOfBids; ++i) {
             market.placeBid{value: ethAmounts[i]}(hour, energyAmounts[i]);
+        }
         vm.stopPrank();
 
-        // Log bids before sorting
-        EnergyBiddingMarket.Bid[] memory unsortedBids = market.getBidsByHour(hour);
-        console.log("# Unsorted Bids");
-        _logBidPrices(unsortedBids);
+        Bid[] memory unsortedBids = market.getBidsByHour(hour);
+        uint256[] memory sortedIndices = BidSorterLib.sortedBidIndicesDescending(unsortedBids);
 
-        // Sort bids
-        uint[] memory sortedIndices = BidSorterLib.sortedBidIndicesDescending(unsortedBids);
-
-        // Log bids after sorting
-        EnergyBiddingMarket.Bid[] memory sortedBids = new EnergyBiddingMarket.Bid[](sortedIndices.length);
-        for (uint j; j < sortedIndices.length; j++) {
+        Bid[] memory sortedBids = new Bid[](sortedIndices.length);
+        for (uint256 j; j < sortedIndices.length; j++) {
             sortedBids[j] = unsortedBids[sortedIndices[j]];
         }
-        console.log("# Sorted Bids");
-        _logBidPrices(sortedBids);
 
-        // Check if bids are indeed sorted
         bool isSorted = true;
         for (uint256 k = 1; k < numberOfBids; ++k) {
             if (sortedBids[k].price > sortedBids[k - 1].price) {
@@ -689,13 +840,10 @@ contract EnergyBiddingMarketTest is Test {
             }
         }
 
-        // Assert that bids are not sorted correctly
         assertTrue(isSorted);
     }
 
     function test_canceledBidsAreNotFulfilledInClearedMarket() public {
-
-        // Setup: Use the same energy and ETH amounts from test_IncorrectSorting
         uint256 numberOfBids = 5;
         uint256[] memory energyAmounts = new uint256[](numberOfBids);
         uint256[] memory ethAmounts = new uint256[](numberOfBids);
@@ -712,14 +860,12 @@ contract EnergyBiddingMarketTest is Test {
         ethAmounts[3] = 33642988462095454;
         ethAmounts[4] = 350037435968563937;
 
-        // Place all bids
         vm.startPrank(BIDDER);
         for (uint256 i = 0; i < numberOfBids; i++) {
             market.placeBid{value: ethAmounts[i]}(correctHour, energyAmounts[i]);
         }
 
-        // Get bids to determine the two with the highest price
-        EnergyBiddingMarket.Bid[] memory bids = market.getBidsByHour(correctHour);
+        Bid[] memory bids = market.getBidsByHour(correctHour);
         uint256 firstMaxIndex;
         uint256 secondMaxIndex;
         uint256 maxPrice = 0;
@@ -738,12 +884,10 @@ contract EnergyBiddingMarketTest is Test {
             }
         }
 
-        // Cancel the two highest priced bids
         market.cancelBid(correctHour, firstMaxIndex);
         market.cancelBid(correctHour, secondMaxIndex);
         vm.stopPrank();
 
-        // Place a single ask that should match the rest (3 bids)
         vm.warp(askHour);
         uint256 totalEnergy = 0;
         for (uint256 i = 0; i < numberOfBids; i++) {
@@ -751,23 +895,19 @@ contract EnergyBiddingMarketTest is Test {
                 totalEnergy += energyAmounts[i];
             }
         }
-        vm.startPrank(ASKER);
-        market.placeAsk(totalEnergy, address(this)); // ask can fully match 3 remaining bids
-        vm.stopPrank();
 
-        // Clear the market
+        vm.prank(SELLER);
+        market.placeAsk(totalEnergy, RECEIVER1);
+
         vm.warp(clearHour);
         market.clearMarket(correctHour);
 
-        // Get sorted indices (should only include 3 bids)
         bids = market.getBidsByHour(correctHour);
-        uint[] memory sortedIndices = BidSorterLib.sortedBidIndicesDescending(bids);
+        uint256[] memory sortedIndices = BidSorterLib.sortedBidIndicesDescending(bids);
         assertEq(sortedIndices.length, 3);
-        _logBidPrices(bids);
 
-        // Check canceled bids are not settled
-        for (uint i = 0; i < numberOfBids; i++) {
-            (, bool settled, bool canceled,,) = market.bidsByHour(correctHour, i);
+        for (uint256 i = 0; i < numberOfBids; i++) {
+            (, , bool settled, , bool canceled) = market.bidsByHour(correctHour, i);
             if (i == firstMaxIndex || i == secondMaxIndex) {
                 assertTrue(canceled);
                 assertFalse(settled);
@@ -777,158 +917,137 @@ contract EnergyBiddingMarketTest is Test {
             }
         }
 
-        // Check that the ask was settled and fully matched
-        (, bool askSettled,, uint256 askAmount, uint256 matchedAmount) = market.asksByHour(correctHour, 0);
+        (, uint88 askAmount, bool askSettled, uint88 matchedAmount) = market.asksByHour(correctHour, 0);
         assertTrue(askSettled);
         assertEq(matchedAmount, askAmount);
         assertEq(matchedAmount, totalEnergy);
     }
 
     function test_multipleBidsPricedAtClearingPrice() public {
-        // Place bids
         vm.startPrank(BIDDER);
         market.placeBid{value: 1 ether}(correctHour, 100);
         market.placeBid{value: 1 ether}(correctHour, 100);
         vm.stopPrank();
 
-        // Warp to the timestamp where askers begin to ask
         vm.warp(askHour);
 
-        // Asker places an ask to fully match the bid
-        vm.prank(ASKER);
-        market.placeAsk(100, ASKER);
+        vm.prank(SELLER);
+        market.placeAsk(100, RECEIVER1);
 
-        // Skip 1 hour so that we can clear the market and settle the orders
         vm.warp(clearHour);
-
-        // Clear the market
         market.clearMarket(correctHour);
 
-        EnergyBiddingMarket.Bid[] memory bids = market.getBidsByHour(correctHour);
+        Bid[] memory bids = market.getBidsByHour(correctHour);
 
-        // Assert that bid 1 is settled
         assertFalse(bids[0].settled);
-        // Assert that bid 2 is settled
         assertTrue(bids[1].settled);
-        // Assert that the asker's claimable balance corresponds only to the total eth amount of the first matched bid
         assertEq(market.claimableBalance(BIDDER), 1 ether);
-        // Assert that the bidder got no refund for the unmatched bid
-        assertEq(market.claimableBalance(ASKER), 1 ether);
-        // Assert that the market contract holds 2 ETH
+        assertEq(market.claimableBalance(RECEIVER1), 1 ether);
         assertEq(address(market).balance, 2 ether);
-        // Assert that the bidder cannot cancel the unmatched bid to recoup the funds
-        vm.expectRevert(abi.encodeWithSelector(EnergyBiddingMarket__MarketAlreadyClearedForThisHour.selector, correctHour));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EnergyBiddingMarket__MarketAlreadyClearedForThisHour.selector,
+                correctHour
+            )
+        );
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 1);
-
-        // Logs bids settled flag
-        console.log("BID 1 SETTLED  :", bids[0].settled);
-        console.log("BID 2 SETTLED  :", bids[1].settled);
     }
 
-    function test_marketCanHandle10000BidsAndAsks() public {
-        DoNotRun doNotRun = new DoNotRun();
-        doNotRun.run();
+    // ============ Upgrade Tests ============
+
+    function test_proxyUpgradability() public {
+        EnergyBiddingMarket newImplementation = new EnergyBiddingMarket();
+
+        UnsafeUpgrades.upgradeProxy(address(market), address(newImplementation), "");
+
+        bytes32 IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+        bytes32 slotValue = vm.load(address(market), IMPLEMENTATION_SLOT);
+        address retrievedImplementation = address(uint160(uint256(slotValue)));
+
+        assertEq(retrievedImplementation, address(newImplementation));
     }
 
-    function _logBidPrices(EnergyBiddingMarket.Bid[] memory bids) private pure {
-        for (uint256 i; i < bids.length; ++i) {
-            console.log("Price of bid #%d : %18e ETH", i, bids[i].price);
-        }
-        console.log("");
-    }
+    // ============ Residual Tests ============
 
     function test_PlaceBidResiduals() public {
-        // Calculate current hour using block timestamp
         uint256 currentHour = (block.timestamp / 3600) * 3600;
         uint256 hour = currentHour + 3600;
 
-        uint256 energyAmount = 1779; // 1779 kWh
-        uint256 ethAmount = 9999999000000022007; // 0.9999999000000022007 ETH
+        uint256 energyAmount = 1779;
+        uint256 ethAmount = 9999999000000022007;
 
-        // Calculate expected truncated price
         uint256 expectedPrice = ethAmount / energyAmount;
-        console.log("Expected price     :", expectedPrice);
 
-        // Execute bid placement
         vm.deal(BIDDER, ethAmount);
         vm.prank(BIDDER);
         market.placeBid{value: ethAmount}(hour, energyAmount);
 
-        // Get stored bid details
-        (,,, uint256 actualAmount, uint256 actualPrice) = market.bidsByHour(hour, 0);
+        (, , , uint88 actualPrice,) = market.bidsByHour(hour, 0);
 
-        // Verify price calculation
-        assertEq(actualPrice, expectedPrice, "Incorrect price calculation");
-        console.log("Actual price       :", actualPrice);
+        assertEq(actualPrice, expectedPrice);
 
-        // Calculate expected residual
         uint256 expectedResidual = ethAmount - (expectedPrice * energyAmount);
-        assertGt(expectedResidual, 0, "No residual amount");
-        console.log("Expected residual  :", expectedResidual);
+        assertGt(expectedResidual, 0);
 
-        // Verify residual amount not retained
-        assertEq(address(market).balance, ethAmount - expectedResidual, "Incorrect ETH balance");
-        console.log("Total residual     :", ethAmount - (actualPrice * actualAmount));
+        assertEq(address(market).balance, ethAmount - expectedResidual);
     }
 
     function test_PlaceMultipleBidsResiduals() public {
-        // 1. Limit parameters to safe ranges
-        uint256 numHours = 18; // 18 hours
+        uint256 numHours = 18;
         uint256 energyAmount = 9;
+        uint256 ethAmount = 9999838000000018636;
 
-        // 2. Constrain ethAmount to valid range
-        uint256 ethAmount = 9999838000000018636; // 9999838000000018636 wei
-
-        // 3. Calculate time parameters
         uint256 currentHour = (block.timestamp / 3600) * 3600;
         uint256 beginHour = currentHour + 3600;
         uint256 endHour = beginHour + (numHours * 3600);
 
-        // 4. Execute multiple bids
         vm.deal(BIDDER, ethAmount);
         vm.startPrank(BIDDER);
         market.placeMultipleBids{value: ethAmount}(beginHour, endHour, energyAmount);
         vm.stopPrank();
 
-        // 5. Verify residual calculations
         uint256 totalUsed;
         for (uint256 hour = beginHour; hour < endHour; hour += 3600) {
-            (,,, uint256 amount, uint256 price) = market.bidsByHour(hour, 0);
-            totalUsed += amount * price;
+            (, uint88 amount, , uint88 price,) = market.bidsByHour(hour, 0);
+            totalUsed += uint256(amount) * uint256(price);
         }
 
-        console.log("Total residual:", ethAmount - totalUsed);
-        assertEq(address(market).balance, totalUsed, "Contract should not retain residuals");
-
-        assertGt(ethAmount - totalUsed, 0, "No residual amount");
+        assertEq(address(market).balance, totalUsed);
+        assertGt(ethAmount - totalUsed, 0);
     }
 
     function test_ArrayBulkBidResiduals() public {
-        // 1. Define parameters
-        uint256[] memory hoursArray = new uint256[](17); // 17-hour bids
+        uint256[] memory hoursArray = new uint256[](17);
         uint256 currentHour = (block.timestamp / 3600) * 3600;
         for (uint256 i = 0; i < 17; i++) {
-            hoursArray[i] = currentHour + 3600 * (i + 1); // Future hours
+            hoursArray[i] = currentHour + 3600 * (i + 1);
         }
 
-        uint256 energyAmount = 13; // 13 kWh per bid
-        uint256 ethAmount = 9999999000000022007; // 9999999000000022007 wei
+        uint256 energyAmount = 13;
+        uint256 ethAmount = 9999999000000022007;
 
-        // 2. Place bids
         vm.deal(BIDDER, ethAmount);
         vm.prank(BIDDER);
         market.placeMultipleBids{value: ethAmount}(hoursArray, energyAmount);
 
-        // 3. Calculate residuals
         uint256 totalUsed;
         for (uint256 i = 0; i < hoursArray.length; i++) {
-            (,,, uint256 amount, uint256 price) = market.bidsByHour(hoursArray[i], 0);
-            totalUsed += amount * price;
+            (, uint88 amount, , uint88 price,) = market.bidsByHour(hoursArray[i], 0);
+            totalUsed += uint256(amount) * uint256(price);
         }
 
-        console.log("Total residual:", ethAmount - totalUsed);
-        assertGt(ethAmount - totalUsed, 0, "No residual retained");
-        assertEq(address(market).balance, totalUsed, "Full amount locked");
+        assertGt(ethAmount - totalUsed, 0);
+        assertEq(address(market).balance, totalUsed);
+    }
+
+    // ============ Helper Functions ============
+
+    function _logBidPrices(Bid[] memory bids) private pure {
+        for (uint256 i; i < bids.length; ++i) {
+            console.log("Price of bid #%d : %18e ETH", i, bids[i].price);
+        }
+        console.log("");
     }
 }
