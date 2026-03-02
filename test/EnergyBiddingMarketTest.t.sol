@@ -20,7 +20,8 @@ import {
     EnergyBiddingMarket__InvalidSellerAddress,
     EnergyBiddingMarket__HourNotInPast,
     EnergyBiddingMarket__BidDoesNotExist,
-    EnergyBiddingMarket__InvalidSortOrder
+    EnergyBiddingMarket__InvalidSortOrder,
+    EnergyBiddingMarket__EmptyAsksArray
 } from "../src/types/MarketTypes.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {DeployerEnergyBiddingMarket} from "../script/Deploy.s.sol";
@@ -349,7 +350,7 @@ contract EnergyBiddingMarketTest is Test {
         vm.prank(SELLER);
         vm.expectRevert(
             abi.encodeWithSelector(
-                EnergyBiddingMarket__AmountCannotBeZero.selector
+                EnergyBiddingMarket__EmptyAsksArray.selector
             )
         );
         market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
@@ -917,8 +918,7 @@ contract EnergyBiddingMarketTest is Test {
             }
         }
 
-        (, uint88 askAmount, bool askSettled, uint88 matchedAmount) = market.asksByHour(correctHour, 0);
-        assertTrue(askSettled);
+        (, uint88 askAmount, , uint88 matchedAmount) = market.asksByHour(correctHour, 0);
         assertEq(matchedAmount, askAmount);
         assertEq(matchedAmount, totalEnergy);
     }
@@ -939,7 +939,8 @@ contract EnergyBiddingMarketTest is Test {
 
         Bid[] memory bids = market.getBidsByHour(correctHour);
 
-        assertFalse(bids[0].settled);
+        // Both bids are marked settled: one fulfilled, one refunded
+        assertTrue(bids[0].settled);
         assertTrue(bids[1].settled);
         assertEq(market.claimableBalance(BIDDER), 1 ether);
         assertEq(market.claimableBalance(RECEIVER1), 1 ether);

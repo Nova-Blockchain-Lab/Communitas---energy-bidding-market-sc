@@ -23,7 +23,11 @@ import {
     EnergyBiddingMarket__InvalidSellerAddress,
     EnergyBiddingMarket__HourNotInPast,
     EnergyBiddingMarket__ETHTransferFailed,
-    EnergyBiddingMarket__InvalidSortOrder
+    EnergyBiddingMarket__InvalidSortOrder,
+    EnergyBiddingMarket__ValueExceedsUint88,
+    EnergyBiddingMarket__DuplicateBidIndex,
+    EnergyBiddingMarket__EmptyAsksArray,
+    EnergyBiddingMarket__InvalidAddress
 } from "./types/MarketTypes.sol";
 
 /// @title EnergyBiddingMarket
@@ -40,6 +44,9 @@ contract EnergyBiddingMarket is
     /// @notice Minimum price per Watt in wei (0.000001 ETH per Watt)
     /// @dev Approximately $0.003 USD at current prices
     uint256 public constant MIN_PRICE = 1e12;
+
+    /// @notice Number of seconds in one hour
+    uint256 private constant SECONDS_PER_HOUR = 3600;
 
     // ============ Storage ============
 
@@ -68,13 +75,16 @@ contract EnergyBiddingMarket is
     mapping(address => uint256) public claimableBalance;
 
     /// @notice Whitelist of authorized sellers
-    mapping(address => bool) public s_whitelistedSellers;
+    mapping(address => bool) public whitelistedSellers;
+
+    /// @dev Reserved storage gap for future upgrades
+    uint256[40] private __gap;
 
     // ============ Modifiers ============
 
     /// @notice Ensures the provided hour is an exact hour timestamp
     modifier assertExactHour(uint256 hour) {
-        if (hour % 3600 != 0) {
+        if (hour % SECONDS_PER_HOUR != 0) {
             revert EnergyBiddingMarket__WrongHourProvided(hour);
         }
         _;
@@ -82,7 +92,7 @@ contract EnergyBiddingMarket is
 
     /// @notice Ensures the caller is a whitelisted seller
     modifier onlyWhitelistedSeller() {
-        if (!s_whitelistedSellers[msg.sender]) {
+        if (!whitelistedSellers[msg.sender]) {
             revert EnergyBiddingMarket__SellerIsNotWhitelisted(msg.sender);
         }
         _;
@@ -105,6 +115,7 @@ contract EnergyBiddingMarket is
 
     /// @notice Initializes the contract with the owner address
     /// @param owner The address that will own the contract
+    /// @dev __UUPSUpgradeable_init() is not called because it was removed in OZ v5 (it was a no-op).
     function initialize(address owner) public initializer {
         __Ownable_init(owner);
     }
@@ -122,11 +133,12 @@ contract EnergyBiddingMarket is
         if (amount == 0) revert EnergyBiddingMarket__AmountCannotBeZero();
 
         uint256 price = msg.value / amount;
+        if (amount > type(uint88).max) revert EnergyBiddingMarket__ValueExceedsUint88(amount);
+        if (price > type(uint88).max) revert EnergyBiddingMarket__ValueExceedsUint88(price);
+
         uint256 totalCost = price * amount;
         uint256 excess = msg.value - totalCost;
 
-        // Safe cast: practical energy amounts (Watts) and prices fit within uint88 (max ~309 quadrillion)
-        // forge-lint: disable-next-line(unsafe-typecast)
         _placeBid(hour, uint88(amount), uint88(price));
 
         if (excess > 0) {
@@ -141,20 +153,21 @@ contract EnergyBiddingMarket is
         uint256 amount
     ) external payable {
         if (amount == 0) revert EnergyBiddingMarket__AmountCannotBeZero();
-        if (beginHour + 3600 > endHour) {
+        if (beginHour + SECONDS_PER_HOUR > endHour) {
             revert EnergyBiddingMarket__WrongHoursProvided(beginHour, endHour);
         }
 
-        uint256 totalEnergy = ((amount * (endHour - beginHour)) / 3600);
+        uint256 totalEnergy = ((amount * (endHour - beginHour)) / SECONDS_PER_HOUR);
         uint256 price = msg.value / totalEnergy;
+        if (amount > type(uint88).max) revert EnergyBiddingMarket__ValueExceedsUint88(amount);
+        if (price > type(uint88).max) revert EnergyBiddingMarket__ValueExceedsUint88(price);
+
         uint256 totalCost = price * totalEnergy;
         uint256 excess = msg.value - totalCost;
 
         for (uint256 i = beginHour; i < endHour;) {
-            // Safe cast: amount and price bounded by practical energy market limits
-            // forge-lint: disable-next-line(unsafe-typecast)
             _placeBid(i, uint88(amount), uint88(price));
-            unchecked { i += 3600; }
+            unchecked { i += SECONDS_PER_HOUR; }
         }
 
         if (excess > 0) {
@@ -172,12 +185,13 @@ contract EnergyBiddingMarket is
         uint256 bidsAmount = biddingHours.length;
         uint256 totalEnergy = amount * bidsAmount;
         uint256 price = msg.value / totalEnergy;
+        if (amount > type(uint88).max) revert EnergyBiddingMarket__ValueExceedsUint88(amount);
+        if (price > type(uint88).max) revert EnergyBiddingMarket__ValueExceedsUint88(price);
+
         uint256 totalCost = price * totalEnergy;
         uint256 excess = msg.value - totalCost;
 
         for (uint256 i; i < bidsAmount;) {
-            // Safe cast: amount and price bounded by practical energy market limits
-            // forge-lint: disable-next-line(unsafe-typecast)
             _placeBid(biddingHours[i], uint88(amount), uint88(price));
             unchecked { ++i; }
         }
@@ -221,12 +235,11 @@ contract EnergyBiddingMarket is
     ) external onlyWhitelistedSeller {
         if (amount == 0) revert EnergyBiddingMarket__AmountCannotBeZero();
         if (receiver == address(0)) revert EnergyBiddingMarket__InvalidSellerAddress();
+        if (amount > type(uint88).max) revert EnergyBiddingMarket__ValueExceedsUint88(amount);
 
         uint256 hour = getCurrentHourTimestamp();
         uint256 totalAsks = totalAsksByHour[hour];
 
-        // Safe cast: practical energy amounts fit within uint88
-        // forge-lint: disable-next-line(unsafe-typecast)
         asksByHour[hour][totalAsks] = Ask({
             seller: receiver,
             amount: uint88(amount),
@@ -236,8 +249,8 @@ contract EnergyBiddingMarket is
 
         unchecked {
             totalAsksByHour[hour] = totalAsks + 1;
-            totalAvailableEnergyByHour[hour] += amount;
         }
+        totalAvailableEnergyByHour[hour] += amount;
 
         emit AskPlaced(receiver, hour, amount);
     }
@@ -250,12 +263,12 @@ contract EnergyBiddingMarket is
         uint256[] calldata sortedBidIndices
     ) external onlyWhitelistedSeller assertExactHour(hour) isMarketNotCleared(hour) {
         // Verify hour is in the past
-        if (hour + 3600 > block.timestamp) {
+        if (hour + SECONDS_PER_HOUR > block.timestamp) {
             revert EnergyBiddingMarket__HourNotInPast(hour);
         }
 
         uint256 asksLength = asks.length;
-        if (asksLength == 0) revert EnergyBiddingMarket__AmountCannotBeZero();
+        if (asksLength == 0) revert EnergyBiddingMarket__EmptyAsksArray();
 
         // Cache storage reads
         uint256 currentAskIndex = totalAsksByHour[hour];
@@ -281,8 +294,8 @@ contract EnergyBiddingMarket is
 
             emit AskPlaced(askInput.receiver, hour, askInput.amount);
 
+            totalNewEnergy += askInput.amount;
             unchecked {
-                totalNewEnergy += askInput.amount;
                 ++currentAskIndex;
                 ++i;
             }
@@ -303,8 +316,8 @@ contract EnergyBiddingMarket is
     function clearMarket(
         uint256 hour
     ) external assertExactHour(hour) {
-        if (hour + 3600 > block.timestamp) {
-            revert EnergyBiddingMarket__WrongHourProvided(hour);
+        if (hour + SECONDS_PER_HOUR > block.timestamp) {
+            revert EnergyBiddingMarket__HourNotInPast(hour);
         }
         _clearMarketOnChainSort(hour);
     }
@@ -317,21 +330,36 @@ contract EnergyBiddingMarket is
         uint256 hour,
         uint256[] calldata sortedBidIndices
     ) external assertExactHour(hour) {
-        if (hour + 3600 > block.timestamp) {
-            revert EnergyBiddingMarket__WrongHourProvided(hour);
+        if (hour + SECONDS_PER_HOUR > block.timestamp) {
+            revert EnergyBiddingMarket__HourNotInPast(hour);
         }
         _clearMarketWithVerification(hour, sortedBidIndices);
     }
 
     /// @inheritdoc IEnergyBiddingMarket
     function clearMarketPastHour() external {
-        uint256 hour = getCurrentHourTimestamp() - 3600;
+        uint256 hour = getCurrentHourTimestamp() - SECONDS_PER_HOUR;
+        // Defense-in-depth: hour is always exact from getCurrentHourTimestamp(),
+        // but assertExactHour ensures consistency if implementation changes.
+        assert(hour % SECONDS_PER_HOUR == 0);
         _clearMarketOnChainSort(hour);
     }
 
     /// @inheritdoc IEnergyBiddingMarket
     /// @dev Uses checks-effects-interactions pattern: state is updated before external call
     function claimBalance() external {
+        _claimBalanceTo(msg.sender);
+    }
+
+    /// @inheritdoc IEnergyBiddingMarket
+    function claimBalanceTo(address payable to) external {
+        if (to == address(0)) revert EnergyBiddingMarket__InvalidAddress();
+        _claimBalanceTo(to);
+    }
+
+    /// @notice Internal function to claim balance to a specified address
+    /// @param to The address to send the balance to
+    function _claimBalanceTo(address to) private {
         uint256 balance = claimableBalance[msg.sender];
         if (balance == 0) {
             revert EnergyBiddingMarket__NoClaimableBalance(msg.sender);
@@ -340,8 +368,10 @@ contract EnergyBiddingMarket is
         // Effect: Update state before external call (CEI pattern)
         claimableBalance[msg.sender] = 0;
 
+        emit BalanceClaimed(msg.sender, to, balance);
+
         // Interaction: External call after state update
-        _transferETH(msg.sender, balance);
+        _transferETH(to, balance);
     }
 
     // ============ Admin Functions ============
@@ -349,7 +379,7 @@ contract EnergyBiddingMarket is
     /// @inheritdoc IEnergyBiddingMarket
     function whitelistSeller(address seller, bool enable) external onlyOwner {
         if (seller == address(0)) revert EnergyBiddingMarket__InvalidSellerAddress();
-        s_whitelistedSellers[seller] = enable;
+        whitelistedSellers[seller] = enable;
         emit SellerWhitelistUpdated(seller, enable);
     }
 
@@ -411,17 +441,33 @@ contract EnergyBiddingMarket is
         uint256[] calldata sortedIndices
     ) internal isMarketNotCleared(hour) {
         uint256 _totalBids = totalBidsByHour[hour];
-        uint256 sortedLength = sortedIndices.length;
 
-        if (sortedLength == 0) {
+        if (sortedIndices.length == 0) {
             revert EnergyBiddingMarket__NoBidsOrAsksForThisHour(hour);
         }
 
-        // Verify sorting: O(n) instead of O(n log n) sorting
-        // 1. Check all indices are valid and count non-canceled bids
-        // 2. Verify descending price order
+        // Verify sorting and build memory arrays in a separate function to avoid stack too deep
+        Bid[] memory bids = _verifySortedIndices(hour, sortedIndices, _totalBids);
+
+        // Convert calldata to memory for internal functions
+        uint256[] memory sortedIndicesMem = sortedIndices;
+
+        _executeClearMarket(hour, sortedIndicesMem, bids);
+    }
+
+    /// @notice Verifies sorted indices are valid, non-duplicate, descending by price, and complete
+    /// @return bids Memory array of all bids for the hour
+    function _verifySortedIndices(
+        uint256 hour,
+        uint256[] calldata sortedIndices,
+        uint256 _totalBids
+    ) private view returns (Bid[] memory) {
+        uint256 sortedLength = sortedIndices.length;
         uint256 nonCanceledCount;
         uint256 lastPrice = type(uint256).max;
+
+        // Bitmap to detect duplicate indices
+        uint256[] memory seen = new uint256[]((_totalBids + 255) / 256);
 
         for (uint256 i; i < sortedLength;) {
             uint256 idx = sortedIndices[i];
@@ -431,19 +477,26 @@ contract EnergyBiddingMarket is
                 revert EnergyBiddingMarket__BidDoesNotExist(hour, idx);
             }
 
+            // Check for duplicate indices using bitmap
+            uint256 word = idx / 256;
+            uint256 bit = 1 << (idx % 256);
+            if (seen[word] & bit != 0) {
+                revert EnergyBiddingMarket__DuplicateBidIndex(hour, idx);
+            }
+            seen[word] |= bit;
+
             Bid storage bid = bidsByHour[hour][idx];
 
-            // Skip canceled bids in verification
+            // Canceled bids must not be included
             if (bid.canceled) {
                 revert EnergyBiddingMarket__BidIsAlreadyCanceled(hour, idx);
             }
 
             // Verify descending order (price must be <= lastPrice)
-            uint256 currentPrice = bid.price;
-            if (currentPrice > lastPrice) {
+            if (bid.price > lastPrice) {
                 revert EnergyBiddingMarket__InvalidSortOrder();
             }
-            lastPrice = currentPrice;
+            lastPrice = bid.price;
 
             unchecked {
                 ++nonCanceledCount;
@@ -451,10 +504,12 @@ contract EnergyBiddingMarket is
             }
         }
 
-        // Verify all non-canceled bids are included
+        // Verify all non-canceled bids are included and build memory array in single pass
+        Bid[] memory bids = new Bid[](_totalBids);
         uint256 actualNonCanceled;
         for (uint256 i; i < _totalBids;) {
-            if (!bidsByHour[hour][i].canceled) {
+            bids[i] = bidsByHour[hour][i];
+            if (!bids[i].canceled) {
                 unchecked { ++actualNonCanceled; }
             }
             unchecked { ++i; }
@@ -464,13 +519,7 @@ contract EnergyBiddingMarket is
             revert EnergyBiddingMarket__InvalidSortOrder();
         }
 
-        // Convert calldata to memory for internal functions
-        uint256[] memory sortedIndicesMem = sortedIndices;
-
-        // Load bids into memory for clearing price calculation
-        Bid[] memory bids = getBidsByHour(hour);
-
-        _executeClearMarket(hour, sortedIndicesMem, bids);
+        return bids;
     }
 
     /// @notice Executes the market clearing logic
@@ -494,11 +543,6 @@ contract EnergyBiddingMarket is
 
         isMarketCleared[hour] = true;
         emit MarketCleared(hour, clearingPrice);
-    }
-
-    /// @notice Alias for backwards compatibility
-    function _clearMarket(uint256 hour) internal {
-        _clearMarketOnChainSort(hour);
     }
 
     /// @notice Matches bids with asks and handles settlements
@@ -533,7 +577,7 @@ contract EnergyBiddingMarket is
             uint256 fillAmount = bidAmount <= remainingEnergy ? bidAmount : remainingEnergy;
 
             // Match with asks
-            fulfilledAsks = _matchBidWithAsks(hour, fillAmount, clearingPrice, fulfilledAsks, _totalAsks);
+            fulfilledAsks = _matchBidWithAsks(hour, bid.bidder, fillAmount, clearingPrice, fulfilledAsks, _totalAsks);
 
             // Settle bid
             bid.settled = true;
@@ -557,8 +601,12 @@ contract EnergyBiddingMarket is
         uint256 endIndex
     ) private {
         for (uint256 k = startIndex; k < endIndex;) {
-            Bid storage refundBid = bidsByHour[hour][sortedIndices[k]];
-            claimableBalance[refundBid.bidder] += uint256(refundBid.amount) * uint256(refundBid.price);
+            uint256 bidIndex = sortedIndices[k];
+            Bid storage refundBid = bidsByHour[hour][bidIndex];
+            refundBid.settled = true;
+            uint256 refundAmount = uint256(refundBid.amount) * uint256(refundBid.price);
+            claimableBalance[refundBid.bidder] += refundAmount;
+            emit BidRefunded(hour, bidIndex, refundBid.bidder, refundAmount);
             unchecked { ++k; }
         }
     }
@@ -567,6 +615,7 @@ contract EnergyBiddingMarket is
     /// @return fulfilledAsks Updated count of fulfilled asks
     function _matchBidWithAsks(
         uint256 hour,
+        address bidder,
         uint256 bidAmount,
         uint256 clearingPrice,
         uint256 fulfilledAsks,
@@ -580,10 +629,11 @@ contract EnergyBiddingMarket is
 
             if (totalMatchedEnergyForBid + amountLeftInAsk <= bidAmount) {
                 // Ask fully matched
-                ask.settled = true;
                 ask.matchedAmount = ask.amount;
+                ask.settled = true;
                 totalMatchedEnergyForBid += amountLeftInAsk;
                 claimableBalance[ask.seller] += amountLeftInAsk * clearingPrice;
+                emit EnergyTraded(hour, bidder, ask.seller, amountLeftInAsk, clearingPrice);
 
                 unchecked { ++fulfilledAsks; }
 
@@ -595,6 +645,7 @@ contract EnergyBiddingMarket is
                 // forge-lint: disable-next-line(unsafe-typecast)
                 ask.matchedAmount = uint88(uint256(ask.matchedAmount) + partialMatch);
                 claimableBalance[ask.seller] += partialMatch * clearingPrice;
+                emit EnergyTraded(hour, bidder, ask.seller, partialMatch, clearingPrice);
                 break;
             }
 
@@ -653,7 +704,7 @@ contract EnergyBiddingMarket is
 
     /// @inheritdoc IEnergyBiddingMarket
     function getCurrentHourTimestamp() public view returns (uint256) {
-        return (block.timestamp / 3600) * 3600;
+        return (block.timestamp / SECONDS_PER_HOUR) * SECONDS_PER_HOUR;
     }
 
     /// @inheritdoc IEnergyBiddingMarket
@@ -688,23 +739,24 @@ contract EnergyBiddingMarket is
         address user
     ) external view returns (Bid[] memory) {
         uint256 totalBids = totalBidsByHour[hour];
+
+        // Single-pass: use max-size array, then resize
+        Bid[] memory temp = new Bid[](totalBids);
         uint256 count;
 
         for (uint256 i; i < totalBids;) {
-            if (bidsByHour[hour][i].bidder == user) {
+            Bid memory bid = bidsByHour[hour][i];
+            if (bid.bidder == user) {
+                temp[count] = bid;
                 unchecked { ++count; }
             }
             unchecked { ++i; }
         }
 
+        // Resize to actual count
         Bid[] memory userBids = new Bid[](count);
-        count = 0;
-
-        for (uint256 i; i < totalBids;) {
-            if (bidsByHour[hour][i].bidder == user) {
-                userBids[count] = bidsByHour[hour][i];
-                unchecked { ++count; }
-            }
+        for (uint256 i; i < count;) {
+            userBids[i] = temp[i];
             unchecked { ++i; }
         }
 
@@ -717,23 +769,24 @@ contract EnergyBiddingMarket is
         address user
     ) external view returns (Ask[] memory) {
         uint256 totalAsks = totalAsksByHour[hour];
+
+        // Single-pass: use max-size array, then resize
+        Ask[] memory temp = new Ask[](totalAsks);
         uint256 count;
 
         for (uint256 i; i < totalAsks;) {
-            if (asksByHour[hour][i].seller == user) {
+            Ask memory ask = asksByHour[hour][i];
+            if (ask.seller == user) {
+                temp[count] = ask;
                 unchecked { ++count; }
             }
             unchecked { ++i; }
         }
 
+        // Resize to actual count
         Ask[] memory userAsks = new Ask[](count);
-        count = 0;
-
-        for (uint256 i; i < totalAsks;) {
-            if (asksByHour[hour][i].seller == user) {
-                userAsks[count] = asksByHour[hour][i];
-                unchecked { ++count; }
-            }
+        for (uint256 i; i < count;) {
+            userAsks[i] = temp[i];
             unchecked { ++i; }
         }
 
@@ -747,6 +800,11 @@ contract EnergyBiddingMarket is
 
     /// @inheritdoc IEnergyBiddingMarket
     function isSellerWhitelisted(address seller) external view returns (bool) {
-        return s_whitelistedSellers[seller];
+        return whitelistedSellers[seller];
+    }
+
+    /// @inheritdoc IEnergyBiddingMarket
+    function getTotalAvailableEnergy(uint256 hour) external view returns (uint256) {
+        return totalAvailableEnergyByHour[hour];
     }
 }

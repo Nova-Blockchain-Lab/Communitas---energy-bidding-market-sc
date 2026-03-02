@@ -20,7 +20,7 @@ contract DeployMultiRegion is Script {
     string[5] regions = [
         "Portugal",
         "Spain",
-        "Germany",
+        "Denmark",
         "Greece",
         "Italy"
     ];
@@ -33,8 +33,8 @@ contract DeployMultiRegion is Script {
         uint256 numberOfRegions = regions.length;
         EnergyBiddingMarket[] memory markets = new EnergyBiddingMarket[](numberOfRegions);
 
-        string memory json;
-        string memory tempjson;
+        string memory json = "deployment";
+        string memory result;
 
         for (uint256 i; i < numberOfRegions;) {
             DeployerEnergyBiddingMarket deployer = new DeployerEnergyBiddingMarket();
@@ -43,18 +43,19 @@ contract DeployMultiRegion is Script {
 
             console.log("Deployed EnergyBiddingMarket for", regions[i], "at:", address(market));
 
-            tempjson = json.serialize(regions[i], address(market));
+            result = json.serialize(regions[i], address(market));
 
             unchecked { ++i; }
         }
 
         // Write config based on chain
         if (block.chainid == PROD_CHAIN_ID) {
-            tempjson = tempjson.serialize(vm.toString(block.chainid), tempjson);
-            tempjson.write(CONFIG_FILE);
-            tempjson.write(CLEAR_MARKET_BOT);
+            string memory outer = "root";
+            result = outer.serialize(vm.toString(block.chainid), result);
+            result.write(CONFIG_FILE);
+            result.write(CLEAR_MARKET_BOT);
         } else {
-            tempjson.write(TEST_FILE);
+            result.write(TEST_FILE);
         }
 
         return markets;

@@ -12,7 +12,6 @@ error EnergyBiddingMarket__NoBidsOrAsksForThisHour(uint256 hour);
 error EnergyBiddingMarket__MarketAlreadyClearedForThisHour(uint256 hour);
 error EnergyBiddingMarket__NoClaimableBalance(address user);
 error EnergyBiddingMarket__OnlyBidOwnerCanCancel(uint256 hour, address bidder);
-error EnergyBiddingMarket__NoBidFulfilled(uint256 hour);
 error EnergyBiddingMarket__BidMinimumPriceNotMet(uint256 price, uint256 minimumPrice);
 error EnergyBiddingMarket__AmountCannotBeZero();
 error EnergyBiddingMarket__BidIsAlreadyCanceled(uint256 hour, uint256 index);
@@ -22,6 +21,10 @@ error EnergyBiddingMarket__InvalidSellerAddress();
 error EnergyBiddingMarket__HourNotInPast(uint256 hour);
 error EnergyBiddingMarket__ETHTransferFailed();
 error EnergyBiddingMarket__InvalidSortOrder();
+error EnergyBiddingMarket__ValueExceedsUint88(uint256 value);
+error EnergyBiddingMarket__DuplicateBidIndex(uint256 hour, uint256 index);
+error EnergyBiddingMarket__EmptyAsksArray();
+error EnergyBiddingMarket__InvalidAddress();
 
 // ============ Structs ============
 

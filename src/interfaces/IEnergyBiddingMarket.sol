@@ -24,42 +24,16 @@ interface IEnergyBiddingMarket {
         uint256 amount
     );
 
-    /// @notice Emitted when a bid is fulfilled
-    event BidFulfilled(
-        uint256 indexed hour,
-        uint256 indexed id,
-        address indexed bidder,
-        uint256 amount,
-        uint256 price
-    );
-
-    /// @notice Emitted when an ask is fulfilled
-    event AskFulfilled(
-        uint256 indexed hour,
-        address indexed seller,
-        uint256 indexed id,
-        uint256 amount,
-        uint256 price
-    );
-
-    /// @notice Emitted when an ask is partially fulfilled
-    event AskPartiallyFulfilled(
-        uint256 indexed hour,
-        address indexed seller,
-        uint256 indexed id,
-        uint256 amount,
-        uint256 price
-    );
-
     /// @notice Emitted when the market is cleared for an hour
     event MarketCleared(uint256 indexed hour, uint256 clearingPrice);
 
-    /// @notice Emitted when a settlement is done
-    event SettlementDone(
+    /// @notice Emitted when a bid is matched with an ask during market clearing
+    event EnergyTraded(
         uint256 indexed hour,
-        address indexed user,
+        address indexed buyer,
+        address indexed seller,
         uint256 amount,
-        bool isBid
+        uint256 clearingPrice
     );
 
     /// @notice Emitted when a bid is canceled
@@ -72,6 +46,17 @@ interface IEnergyBiddingMarket {
 
     /// @notice Emitted when a seller whitelist status changes
     event SellerWhitelistUpdated(address indexed seller, bool enabled);
+
+    /// @notice Emitted when a user claims their balance
+    event BalanceClaimed(address indexed user, address indexed to, uint256 amount);
+
+    /// @notice Emitted when a bid is refunded during market clearing (no energy available)
+    event BidRefunded(
+        uint256 indexed hour,
+        uint256 indexed index,
+        address indexed bidder,
+        uint256 refundAmount
+    );
 
     // ============ Bidder Functions ============
 
@@ -142,6 +127,10 @@ interface IEnergyBiddingMarket {
     /// @notice Allows users to claim any balance available to them
     function claimBalance() external;
 
+    /// @notice Allows users to claim balance to a different address (useful if msg.sender is a contract that can't receive ETH)
+    /// @param to The address to send the balance to
+    function claimBalanceTo(address payable to) external;
+
     // ============ Admin Functions ============
 
     /// @notice Whitelists or removes a seller from the whitelist
@@ -201,4 +190,9 @@ interface IEnergyBiddingMarket {
     /// @param seller The address to check
     /// @return True if whitelisted
     function isSellerWhitelisted(address seller) external view returns (bool);
+
+    /// @notice Returns the total available energy for a specific hour
+    /// @param hour The hour to query
+    /// @return The total available energy in Watts
+    function getTotalAvailableEnergy(uint256 hour) external view returns (uint256);
 }

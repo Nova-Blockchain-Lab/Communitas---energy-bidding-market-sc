@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {BaseTest} from "../BaseTest.t.sol";
 import {
-    EnergyBiddingMarket__WrongHourProvided,
+    EnergyBiddingMarket__HourNotInPast,
     EnergyBiddingMarket__NoBidsOrAsksForThisHour,
     EnergyBiddingMarket__MarketAlreadyClearedForThisHour,
     EnergyBiddingMarket__InvalidSortOrder,
@@ -33,7 +33,7 @@ contract ClearMarketTest is BaseTest {
         uint256 futureHour = correctHour + 7200;
         vm.expectRevert(
             abi.encodeWithSelector(
-                EnergyBiddingMarket__WrongHourProvided.selector,
+                EnergyBiddingMarket__HourNotInPast.selector,
                 futureHour
             )
         );

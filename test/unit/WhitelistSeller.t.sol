@@ -11,11 +11,11 @@ contract WhitelistSellerTest is BaseTest {
     function test_whitelistSeller_Success() public {
         address newSeller = makeAddr("newSeller");
 
-        assertFalse(market.s_whitelistedSellers(newSeller));
+        assertFalse(market.whitelistedSellers(newSeller));
 
         market.whitelistSeller(newSeller, true);
 
-        assertTrue(market.s_whitelistedSellers(newSeller));
+        assertTrue(market.whitelistedSellers(newSeller));
     }
 
     function test_whitelistSeller_OnlyOwner() public {
@@ -32,11 +32,11 @@ contract WhitelistSellerTest is BaseTest {
     }
 
     function test_whitelistSeller_Disable() public {
-        assertTrue(market.s_whitelistedSellers(SELLER));
+        assertTrue(market.whitelistedSellers(SELLER));
 
         market.whitelistSeller(SELLER, false);
 
-        assertFalse(market.s_whitelistedSellers(SELLER));
+        assertFalse(market.whitelistedSellers(SELLER));
     }
 
     function test_whitelistSeller_MultipleAddresses() public {
@@ -48,16 +48,16 @@ contract WhitelistSellerTest is BaseTest {
         market.whitelistSeller(seller2, true);
         market.whitelistSeller(seller3, true);
 
-        assertTrue(market.s_whitelistedSellers(seller1));
-        assertTrue(market.s_whitelistedSellers(seller2));
-        assertTrue(market.s_whitelistedSellers(seller3));
+        assertTrue(market.whitelistedSellers(seller1));
+        assertTrue(market.whitelistedSellers(seller2));
+        assertTrue(market.whitelistedSellers(seller3));
 
         // Disable one
         market.whitelistSeller(seller2, false);
 
-        assertTrue(market.s_whitelistedSellers(seller1));
-        assertFalse(market.s_whitelistedSellers(seller2));
-        assertTrue(market.s_whitelistedSellers(seller3));
+        assertTrue(market.whitelistedSellers(seller1));
+        assertFalse(market.whitelistedSellers(seller2));
+        assertTrue(market.whitelistedSellers(seller3));
     }
 
     function test_whitelistSeller_EmitsEvent() public {
