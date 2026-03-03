@@ -7,7 +7,6 @@ All **128 tests** pass. The codebase has been significantly refactored with the 
 ## 1. Unit Changed: kWh → Watts
 
 - All documentation, comments, and variable names now refer to **Watts** instead of kWh
-- The `MIN_PRICE` is documented as price per Watt
 
 ## 2. Whitelist Functionality Implemented
 

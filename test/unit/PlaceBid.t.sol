@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {BaseTest} from "../BaseTest.t.sol";
 import {
     EnergyBiddingMarket__WrongHourProvided,
-    EnergyBiddingMarket__BidMinimumPriceNotMet,
     EnergyBiddingMarket__AmountCannotBeZero
 } from "../../src/types/MarketTypes.sol";
 
@@ -14,7 +13,7 @@ contract PlaceBidTest is BaseTest {
     // ============ Single Bid Tests ============
 
     function test_placeBid_Success() public {
-        market.placeBid{value: minimumPrice * bidAmount}(correctHour, bidAmount);
+        market.placeBid{value: testPrice * bidAmount}(correctHour, bidAmount);
 
         (
             address bidder,
@@ -25,7 +24,7 @@ contract PlaceBidTest is BaseTest {
         ) = market.bidsByHour(correctHour, 0);
 
         assertEq(amount, bidAmount);
-        assertEq(price, minimumPrice);
+        assertEq(price, testPrice);
         assertEq(settled, false);
         assertEq(bidder, address(this));
         assertEq(canceled, false);
@@ -39,7 +38,7 @@ contract PlaceBidTest is BaseTest {
                 wrongHour
             )
         );
-        market.placeBid{value: minimumPrice * bidAmount}(wrongHour, 100);
+        market.placeBid{value: testPrice * bidAmount}(wrongHour, 100);
     }
 
     function test_placeBid_hourInPast() public {
@@ -50,19 +49,16 @@ contract PlaceBidTest is BaseTest {
                 wrongHour
             )
         );
-        market.placeBid{value: minimumPrice * bidAmount}(wrongHour, 100);
+        market.placeBid{value: testPrice * bidAmount}(wrongHour, 100);
     }
 
-    function test_placeBid_lessThanMinimumPrice() public {
-        uint256 wrongPrice = 100;
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                EnergyBiddingMarket__BidMinimumPriceNotMet.selector,
-                wrongPrice,
-                minimumPrice
-            )
-        );
-        market.placeBid{value: wrongPrice * bidAmount}(correctHour, bidAmount);
+    function test_placeBid_lowPriceAccepted() public {
+        uint256 lowPrice = 100;
+        market.placeBid{value: lowPrice * bidAmount}(correctHour, bidAmount);
+
+        (, uint88 amount, , uint88 price, ) = market.bidsByHour(correctHour, 0);
+        assertEq(amount, bidAmount);
+        assertEq(price, lowPrice);
     }
 
     function test_placeBid_amountZero() public {
@@ -71,7 +67,7 @@ contract PlaceBidTest is BaseTest {
                 EnergyBiddingMarket__AmountCannotBeZero.selector
             )
         );
-        market.placeBid{value: minimumPrice * bidAmount}(correctHour, 0);
+        market.placeBid{value: testPrice * bidAmount}(correctHour, 0);
     }
 
     // ============ Multiple Bids Tests ============
@@ -80,7 +76,7 @@ contract PlaceBidTest is BaseTest {
         uint256 beginHour = correctHour;
         uint256 endHour = correctHour + 7200;
 
-        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(beginHour, endHour, bidAmount);
+        market.placeMultipleBids{value: testPrice * bidAmount * 2}(beginHour, endHour, bidAmount);
 
         for (uint256 hour = beginHour; hour < endHour; hour += 3600) {
             (
@@ -92,7 +88,7 @@ contract PlaceBidTest is BaseTest {
             ) = market.bidsByHour(hour, 0);
 
             assertEq(actualBidAmount, bidAmount);
-            assertEq(bidPrice, minimumPrice);
+            assertEq(bidPrice, testPrice);
             assertEq(settled, false);
             assertEq(bidder, address(this));
             assertEq(canceled, false);
@@ -104,7 +100,7 @@ contract PlaceBidTest is BaseTest {
         biddingHours[0] = correctHour;
         biddingHours[1] = correctHour + 3600;
 
-        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(biddingHours, bidAmount);
+        market.placeMultipleBids{value: testPrice * bidAmount * 2}(biddingHours, bidAmount);
 
         for (uint256 i = 0; i < biddingHours.length; i++) {
             (
@@ -116,7 +112,7 @@ contract PlaceBidTest is BaseTest {
             ) = market.bidsByHour(biddingHours[i], 0);
 
             assertEq(actualBidAmount, bidAmount);
-            assertEq(bidPrice, minimumPrice);
+            assertEq(bidPrice, testPrice);
             assertEq(settled, false);
             assertEq(bidder, address(this));
             assertEq(canceled, false);
@@ -133,7 +129,7 @@ contract PlaceBidTest is BaseTest {
                 EnergyBiddingMarket__AmountCannotBeZero.selector
             )
         );
-        market.placeMultipleBids{value: minimumPrice * 2}(biddingHours, 0);
+        market.placeMultipleBids{value: testPrice * 2}(biddingHours, 0);
     }
 
     function test_placeMultipleBids_InvalidHours() public {
@@ -147,23 +143,22 @@ contract PlaceBidTest is BaseTest {
                 correctHour + 1
             )
         );
-        market.placeMultipleBids{value: minimumPrice * bidAmount * 2}(biddingHours, bidAmount);
+        market.placeMultipleBids{value: testPrice * bidAmount * 2}(biddingHours, bidAmount);
     }
 
-    function test_placeMultipleBids_LessThanMinimumPrice() public {
+    function test_placeMultipleBids_LowPriceAccepted() public {
         uint256[] memory biddingHours = new uint256[](2);
         biddingHours[0] = correctHour;
         biddingHours[1] = correctHour + 3600;
 
-        uint256 wrongPrice = minimumPrice - 1;
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                EnergyBiddingMarket__BidMinimumPriceNotMet.selector,
-                wrongPrice,
-                minimumPrice
-            )
-        );
-        market.placeMultipleBids{value: wrongPrice * bidAmount * 2}(biddingHours, bidAmount);
+        uint256 lowPrice = 1;
+        market.placeMultipleBids{value: lowPrice * bidAmount * 2}(biddingHours, bidAmount);
+
+        for (uint256 i = 0; i < biddingHours.length; i++) {
+            (, uint88 amount, , uint88 price, ) = market.bidsByHour(biddingHours[i], 0);
+            assertEq(amount, bidAmount);
+            assertEq(price, lowPrice);
+        }
     }
 
     // ============ Residual Tests ============

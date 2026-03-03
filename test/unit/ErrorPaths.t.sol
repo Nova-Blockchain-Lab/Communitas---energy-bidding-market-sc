@@ -16,7 +16,7 @@ contract ErrorPathsTest is BaseTest {
     function test_placeBid_AmountExceedsUint88() public {
         uint256 overflowAmount = uint256(type(uint88).max) + 1;
 
-        // Use a small msg.value to avoid overflow in minimumPrice * overflowAmount
+        // Use a small msg.value to avoid overflow
         // price = msg.value / amount will be 0 or very small, but the amount check triggers first
         vm.deal(address(this), 1 ether);
         vm.expectRevert(
@@ -47,38 +47,41 @@ contract ErrorPathsTest is BaseTest {
     function test_placeMultipleBids_Range_AmountExceedsUint88() public {
         uint256 overflowAmount = uint256(type(uint88).max) + 1;
         uint256 endHour = correctHour + 7200;
+        uint256 testPrice = 1e12;
 
-        vm.deal(address(this), minimumPrice * overflowAmount * 2);
+        vm.deal(address(this), testPrice * overflowAmount * 2);
         vm.expectRevert(
             abi.encodeWithSelector(
                 EnergyBiddingMarket__ValueExceedsUint88.selector,
                 overflowAmount
             )
         );
-        market.placeMultipleBids{value: minimumPrice * overflowAmount * 2}(correctHour, endHour, overflowAmount);
+        market.placeMultipleBids{value: testPrice * overflowAmount * 2}(correctHour, endHour, overflowAmount);
     }
 
     function test_placeMultipleBids_Array_AmountExceedsUint88() public {
         uint256 overflowAmount = uint256(type(uint88).max) + 1;
         uint256[] memory biddingHours = new uint256[](1);
         biddingHours[0] = correctHour;
+        uint256 testPrice = 1e12;
 
-        vm.deal(address(this), minimumPrice * overflowAmount);
+        vm.deal(address(this), testPrice * overflowAmount);
         vm.expectRevert(
             abi.encodeWithSelector(
                 EnergyBiddingMarket__ValueExceedsUint88.selector,
                 overflowAmount
             )
         );
-        market.placeMultipleBids{value: minimumPrice * overflowAmount}(biddingHours, overflowAmount);
+        market.placeMultipleBids{value: testPrice * overflowAmount}(biddingHours, overflowAmount);
     }
 
     // ============ DuplicateBidIndex Tests ============
 
     function test_clearMarketWithSortedBids_DuplicateIndex() public {
         // Place 2 bids
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
-        market.placeBid{value: minimumPrice * 2 * 50}(correctHour, 50);
+        uint256 testPrice = 1e12;
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 2 * 50}(correctHour, 50);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -107,16 +110,17 @@ contract ErrorPathsTest is BaseTest {
         // Deploy a contract that rejects ETH transfers
         ETHRejecter rejecter = new ETHRejecter();
         vm.deal(address(rejecter), 100 ether);
+        uint256 testPrice = 1e12;
 
         // Place bid from the rejecter contract
         vm.prank(address(rejecter));
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         // Cancel the bid to generate claimable balance
         vm.prank(address(rejecter));
         market.cancelBid(correctHour, 0);
 
-        assertEq(market.claimableBalance(address(rejecter)), minimumPrice * 100);
+        assertEq(market.claimableBalance(address(rejecter)), testPrice * 100);
 
         // Attempting to claim should fail because rejecter rejects ETH
         vm.prank(address(rejecter));
@@ -132,10 +136,11 @@ contract ErrorPathsTest is BaseTest {
         // Deploy a contract that rejects ETH transfers
         ETHRejecter rejecter = new ETHRejecter();
         vm.deal(address(rejecter), 100 ether);
+        uint256 testPrice = 1e12;
 
         // Place bid from the rejecter contract
         vm.prank(address(rejecter));
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         // Cancel the bid to generate claimable balance
         vm.prank(address(rejecter));
@@ -149,7 +154,7 @@ contract ErrorPathsTest is BaseTest {
         market.claimBalanceTo(recipient);
 
         assertEq(market.claimableBalance(address(rejecter)), 0);
-        assertEq(recipient.balance, recipientBalanceBefore + minimumPrice * 100);
+        assertEq(recipient.balance, recipientBalanceBefore + testPrice * 100);
     }
 }
 

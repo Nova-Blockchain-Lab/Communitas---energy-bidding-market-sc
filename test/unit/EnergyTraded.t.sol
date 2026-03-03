@@ -20,9 +20,9 @@ contract EnergyTradedTest is BaseTest {
 
     /// @notice 1 bid, 1 ask, exact match -> 1 EnergyTraded event
     function test_energyTraded_SingleBidSingleAsk() public {
-        // Place bid: 100 kWh at minimumPrice
+        // Place bid: 100 kWh at testPrice
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         // Place ask: 100 kWh
         vm.warp(askHour);
@@ -31,7 +31,7 @@ contract EnergyTradedTest is BaseTest {
 
         // Expect EnergyTraded event
         vm.expectEmit(true, true, true, true);
-        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 100, minimumPrice);
+        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 100, testPrice);
 
         // Clear market
         vm.warp(clearHour);
@@ -42,7 +42,7 @@ contract EnergyTradedTest is BaseTest {
     function test_energyTraded_SingleBidMultipleAsks() public {
         // Place bid: 150 kWh
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 150}(correctHour, 150);
+        market.placeBid{value: testPrice * 150}(correctHour, 150);
 
         // Place 2 asks: 80 + 70 kWh
         vm.warp(askHour);
@@ -53,9 +53,9 @@ contract EnergyTradedTest is BaseTest {
 
         // Expect 2 EnergyTraded events
         vm.expectEmit(true, true, true, true);
-        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 80, minimumPrice);
+        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 80, testPrice);
         vm.expectEmit(true, true, true, true);
-        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER2, 70, minimumPrice);
+        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER2, 70, testPrice);
 
         vm.warp(clearHour);
         market.clearMarket(correctHour);
@@ -65,9 +65,9 @@ contract EnergyTradedTest is BaseTest {
     function test_energyTraded_MultipleBidsSingleAsk() public {
         // Place 2 bids at same price: 60 + 40 kWh
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 60}(correctHour, 60);
+        market.placeBid{value: testPrice * 60}(correctHour, 60);
         vm.prank(BIDDER2);
-        market.placeBid{value: minimumPrice * 40}(correctHour, 40);
+        market.placeBid{value: testPrice * 40}(correctHour, 40);
 
         // Place ask: 100 kWh (exactly enough for both)
         vm.warp(askHour);
@@ -106,7 +106,7 @@ contract EnergyTradedTest is BaseTest {
     function test_energyTraded_PartialFill() public {
         // Place bid: 200 kWh
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 200}(correctHour, 200);
+        market.placeBid{value: testPrice * 200}(correctHour, 200);
 
         // Place ask: only 50 kWh available
         vm.warp(askHour);
@@ -115,7 +115,7 @@ contract EnergyTradedTest is BaseTest {
 
         // Event should show 50, not 200
         vm.expectEmit(true, true, true, true);
-        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 50, minimumPrice);
+        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 50, testPrice);
 
         vm.warp(clearHour);
         market.clearMarket(correctHour);
@@ -125,7 +125,7 @@ contract EnergyTradedTest is BaseTest {
     function test_energyTraded_NoMatch() public {
         // Place bid only, no asks
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         // Place ask with 0 supply by not placing any asks at all
         // We need at least 1 bid to clear. Since totalAvailableEnergy == 0,
@@ -163,7 +163,7 @@ contract EnergyTradedTest is BaseTest {
     function test_energyTraded_ViaBatchAsksAndClear() public {
         // Place bid
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.warp(clearHour);
 
@@ -174,7 +174,7 @@ contract EnergyTradedTest is BaseTest {
         sortedIndices[0] = 0;
 
         vm.expectEmit(true, true, true, true);
-        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 100, minimumPrice);
+        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 100, testPrice);
 
         vm.prank(SELLER);
         market.placeAsksAndClearMarket(correctHour, asks, sortedIndices);
@@ -184,7 +184,7 @@ contract EnergyTradedTest is BaseTest {
     function test_energyTraded_ViaSortedBids() public {
         // Place bid
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         // Place ask
         vm.warp(askHour);
@@ -197,7 +197,7 @@ contract EnergyTradedTest is BaseTest {
         sortedIndices[0] = 0;
 
         vm.expectEmit(true, true, true, true);
-        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 100, minimumPrice);
+        emit IEnergyBiddingMarket.EnergyTraded(correctHour, BIDDER, RECEIVER1, 100, testPrice);
 
         market.clearMarketWithSortedBids(correctHour, sortedIndices);
     }
@@ -206,9 +206,9 @@ contract EnergyTradedTest is BaseTest {
     function test_energyTraded_AmountsMatchSettlement() public {
         // Place 2 bids at different prices
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 2 * 80}(correctHour, 80);
+        market.placeBid{value: testPrice * 2 * 80}(correctHour, 80);
         vm.prank(BIDDER2);
-        market.placeBid{value: minimumPrice * 50}(correctHour, 50);
+        market.placeBid{value: testPrice * 50}(correctHour, 50);
 
         // Place 2 asks totaling 100 kWh
         vm.warp(askHour);

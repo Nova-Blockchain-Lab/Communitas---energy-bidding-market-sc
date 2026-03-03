@@ -23,7 +23,7 @@ contract BatchOperationsTest is BaseTest {
         uint256 amount = 100;
 
         uint256 totalHours = (endHour - beginHour) / 3600;
-        uint256 totalValue = minimumPrice * amount * totalHours;
+        uint256 totalValue = testPrice * amount * totalHours;
 
         market.placeMultipleBids{value: totalValue}(beginHour, endHour, amount);
 
@@ -44,7 +44,7 @@ contract BatchOperationsTest is BaseTest {
                 endHour
             )
         );
-        market.placeMultipleBids{value: minimumPrice * 100}(beginHour, endHour, 100);
+        market.placeMultipleBids{value: testPrice * 100}(beginHour, endHour, 100);
     }
 
     // ============ placeMultipleBids (array) Tests ============
@@ -56,7 +56,7 @@ contract BatchOperationsTest is BaseTest {
         bidHours[2] = correctHour + 7200;
 
         uint256 amount = 100;
-        uint256 totalValue = minimumPrice * amount * 3;
+        uint256 totalValue = testPrice * amount * 3;
 
         market.placeMultipleBids{value: totalValue}(bidHours, amount);
 
@@ -75,15 +75,15 @@ contract BatchOperationsTest is BaseTest {
                 EnergyBiddingMarket__AmountCannotBeZero.selector
             )
         );
-        market.placeMultipleBids{value: minimumPrice * 100}(bidHours, 0);
+        market.placeMultipleBids{value: testPrice * 100}(bidHours, 0);
     }
 
     // ============ placeAsksAndClearMarket Tests ============
 
     function test_placeAsksAndClearMarket_Success() public {
         // Place bids first
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
-        market.placeBid{value: minimumPrice * 2 * 50}(correctHour, 50);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 2 * 50}(correctHour, 50);
 
         vm.warp(clearHour);
 
@@ -104,7 +104,7 @@ contract BatchOperationsTest is BaseTest {
     }
 
     function test_placeAsksAndClearMarket_NotWhitelisted() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.warp(clearHour);
 
@@ -125,7 +125,7 @@ contract BatchOperationsTest is BaseTest {
     }
 
     function test_placeAsksAndClearMarket_HourNotPast() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         AskInput[] memory asks = new AskInput[](1);
         asks[0] = AskInput({receiver: RECEIVER1, amount: 100});
@@ -162,7 +162,7 @@ contract BatchOperationsTest is BaseTest {
     }
 
     function test_placeAsksAndClearMarket_InvalidReceiver() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.warp(clearHour);
 
@@ -182,7 +182,7 @@ contract BatchOperationsTest is BaseTest {
     }
 
     function test_placeAsksAndClearMarket_ZeroAmount() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.warp(clearHour);
 
@@ -202,7 +202,7 @@ contract BatchOperationsTest is BaseTest {
     }
 
     function test_placeAsksAndClearMarket_MultipleReceivers() public {
-        market.placeBid{value: minimumPrice * 300}(correctHour, 300);
+        market.placeBid{value: testPrice * 300}(correctHour, 300);
 
         vm.warp(clearHour);
 

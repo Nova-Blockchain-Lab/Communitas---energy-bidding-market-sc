@@ -15,7 +15,7 @@ import {
 contract ClearMarketTest is BaseTest {
     function test_clearMarket_Success() public {
         // Place bid
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
 
         // Place ask
         vm.warp(askHour);
@@ -52,7 +52,7 @@ contract ClearMarketTest is BaseTest {
     }
 
     function test_clearMarket_AlreadyCleared() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -71,7 +71,7 @@ contract ClearMarketTest is BaseTest {
     }
 
     function test_clearMarketPastHour() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -88,9 +88,9 @@ contract ClearMarketTest is BaseTest {
     function test_clearMarketWithSortedBids_Success() public {
         // Place bids with different prices
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100); // index 0, price = minimumPrice
-        market.placeBid{value: minimumPrice * 2 * 50}(correctHour, 50);  // index 1, price = minimumPrice * 2
-        market.placeBid{value: minimumPrice * 3 * 30}(correctHour, 30);  // index 2, price = minimumPrice * 3
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100); // index 0, price = defaultTestPrice
+        market.placeBid{value: defaultTestPrice * 2 * 50}(correctHour, 50);  // index 1, price = defaultTestPrice * 2
+        market.placeBid{value: defaultTestPrice * 3 * 30}(correctHour, 30);  // index 2, price = defaultTestPrice * 3
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -111,8 +111,8 @@ contract ClearMarketTest is BaseTest {
 
     function test_clearMarketWithSortedBids_InvalidOrder() public {
         // Place bids with different prices
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
-        market.placeBid{value: minimumPrice * 2 * 50}(correctHour, 50);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 2 * 50}(correctHour, 50);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -133,9 +133,9 @@ contract ClearMarketTest is BaseTest {
 
     function test_clearMarketWithSortedBids_MissingBid() public {
         // Place 3 bids
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
-        market.placeBid{value: minimumPrice * 50}(correctHour, 50);
-        market.placeBid{value: minimumPrice * 30}(correctHour, 30);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 50}(correctHour, 50);
+        market.placeBid{value: defaultTestPrice * 30}(correctHour, 30);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -155,7 +155,7 @@ contract ClearMarketTest is BaseTest {
     }
 
     function test_clearMarketWithSortedBids_InvalidIndex() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -180,7 +180,7 @@ contract ClearMarketTest is BaseTest {
     function test_clearMarketWithSortedBids_GasSavings() public {
         // Place many bids to demonstrate gas savings
         for (uint256 i = 0; i < 20; i++) {
-            market.placeBid{value: (minimumPrice + i) * 10}(correctHour, 10);
+            market.placeBid{value: (defaultTestPrice + i) * 10}(correctHour, 10);
         }
 
         vm.warp(askHour);
@@ -203,9 +203,9 @@ contract ClearMarketTest is BaseTest {
 
     function test_clearingPrice_UniformPriceAuction() public {
         // Bidder 1: 100 Watts at 2x minimum price
-        market.placeBid{value: minimumPrice * 2 * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 2 * 100}(correctHour, 100);
         // Bidder 2: 50 Watts at 3x minimum price
-        market.placeBid{value: minimumPrice * 3 * 50}(correctHour, 50);
+        market.placeBid{value: defaultTestPrice * 3 * 50}(correctHour, 50);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -216,12 +216,12 @@ contract ClearMarketTest is BaseTest {
 
         // Clearing price should be 2x minimum (marginal bid)
         uint256 clearingPrice = market.clearingPricePerHour(correctHour);
-        assertEq(clearingPrice, minimumPrice * 2);
+        assertEq(clearingPrice, defaultTestPrice * 2);
     }
 
     function test_clearingPrice_AllBidsFulfilled() public {
         // Single bid
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -231,6 +231,6 @@ contract ClearMarketTest is BaseTest {
         market.clearMarket(correctHour);
 
         uint256 clearingPrice = market.clearingPricePerHour(correctHour);
-        assertEq(clearingPrice, minimumPrice);
+        assertEq(clearingPrice, defaultTestPrice);
     }
 }

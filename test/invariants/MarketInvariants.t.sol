@@ -9,7 +9,7 @@ import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 /// @notice Handler contract for invariant testing
 contract MarketHandler is Test {
     EnergyBiddingMarket public market;
-    uint256 public minimumPrice;
+    uint256 public testPrice;
     uint256 public correctHour;
     uint256 public askHour;
     uint256 public clearHour;
@@ -24,13 +24,13 @@ contract MarketHandler is Test {
 
     constructor(
         EnergyBiddingMarket _market,
-        uint256 _minimumPrice,
+        uint256 _testPrice,
         uint256 _correctHour,
         address _seller,
         address _receiver
     ) {
         market = _market;
-        minimumPrice = _minimumPrice;
+        testPrice = _testPrice;
         correctHour = _correctHour;
         askHour = _correctHour + 3600;
         clearHour = _correctHour + 7200;
@@ -50,7 +50,7 @@ contract MarketHandler is Test {
         amount = bound(amount, 1, 10000);
         priceMultiplier = bound(priceMultiplier, 1, 10);
 
-        uint256 price = minimumPrice * priceMultiplier;
+        uint256 price = testPrice * priceMultiplier;
         uint256 totalValue = price * amount;
 
         address bidder = bidders[bidderIndex];
@@ -128,7 +128,8 @@ contract MarketInvariantsTest is Test {
     EnergyBiddingMarket public market;
     MarketHandler public handler;
 
-    uint256 public minimumPrice = 1e12;
+    uint256 public testPrice = 0;
+    uint256 public defaultTestPrice = 1e12;
     uint256 public correctHour;
     address public seller = makeAddr("seller");
     address public receiver = makeAddr("receiver");
@@ -150,7 +151,7 @@ contract MarketInvariantsTest is Test {
         market.whitelistSeller(seller, true);
 
         // Create handler
-        handler = new MarketHandler(market, minimumPrice, correctHour, seller, receiver);
+        handler = new MarketHandler(market, defaultTestPrice, correctHour, seller, receiver);
 
         // Fund contract for testing
         vm.deal(address(market), 0);
@@ -198,11 +199,11 @@ contract MarketInvariantsTest is Test {
 
         uint256 clearingPrice = market.clearingPricePerHour(correctHour);
 
-        // Clearing price must be at least minimum price
+        // Clearing price must be >= 0
         assertGe(
             clearingPrice,
-            minimumPrice,
-            "Clearing price must be >= minimum price"
+            0,
+            "Clearing price must be >= 0"
         );
 
         // Clearing price must not exceed any bid price (checked against bid that was matched)

@@ -20,20 +20,20 @@ contract EventEmissionsTest is BaseTest {
 
     function test_BidPlaced_SingleBid() public {
         vm.expectEmit(true, true, false, true);
-        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour, 100, minimumPrice);
+        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour, 100, testPrice);
 
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
     }
 
     function test_BidPlaced_MultipleBidsRange() public {
         uint256 endHour = correctHour + 7200;
 
         vm.expectEmit(true, true, false, true);
-        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour, 100, minimumPrice);
+        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour, 100, testPrice);
         vm.expectEmit(true, true, false, true);
-        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour + 3600, 100, minimumPrice);
+        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour + 3600, 100, testPrice);
 
-        market.placeMultipleBids{value: minimumPrice * 100 * 2}(correctHour, endHour, 100);
+        market.placeMultipleBids{value: testPrice * 100 * 2}(correctHour, endHour, 100);
     }
 
     function test_BidPlaced_MultipleBidsArray() public {
@@ -42,11 +42,11 @@ contract EventEmissionsTest is BaseTest {
         biddingHours[1] = correctHour + 3600;
 
         vm.expectEmit(true, true, false, true);
-        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour, 100, minimumPrice);
+        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour, 100, testPrice);
         vm.expectEmit(true, true, false, true);
-        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour + 3600, 100, minimumPrice);
+        emit IEnergyBiddingMarket.BidPlaced(address(this), correctHour + 3600, 100, testPrice);
 
-        market.placeMultipleBids{value: minimumPrice * 100 * 2}(biddingHours, 100);
+        market.placeMultipleBids{value: testPrice * 100 * 2}(biddingHours, 100);
     }
 
     // ============ AskPlaced Event Tests ============
@@ -62,7 +62,7 @@ contract EventEmissionsTest is BaseTest {
     }
 
     function test_AskPlaced_BatchAsk() public {
-        market.placeBid{value: minimumPrice * 200}(correctHour, 200);
+        market.placeBid{value: testPrice * 200}(correctHour, 200);
         vm.warp(clearHour);
 
         AskInput[] memory asks = new AskInput[](2);
@@ -85,9 +85,9 @@ contract EventEmissionsTest is BaseTest {
 
     function test_BidCanceled_Event() public {
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
-        uint256 expectedRefund = minimumPrice * 100;
+        uint256 expectedRefund = testPrice * 100;
 
         vm.expectEmit(true, true, true, true);
         emit IEnergyBiddingMarket.BidCanceled(correctHour, 0, BIDDER, expectedRefund);
@@ -99,21 +99,21 @@ contract EventEmissionsTest is BaseTest {
     // ============ MarketCleared Event Tests ============
 
     function test_MarketCleared_Event() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
         market.placeAsk(100, RECEIVER1);
 
         vm.expectEmit(true, false, false, true);
-        emit IEnergyBiddingMarket.MarketCleared(correctHour, minimumPrice);
+        emit IEnergyBiddingMarket.MarketCleared(correctHour, testPrice);
 
         vm.warp(clearHour);
         market.clearMarket(correctHour);
     }
 
     function test_MarketCleared_ViaSortedBids() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -125,13 +125,13 @@ contract EventEmissionsTest is BaseTest {
         sortedIndices[0] = 0;
 
         vm.expectEmit(true, false, false, true);
-        emit IEnergyBiddingMarket.MarketCleared(correctHour, minimumPrice);
+        emit IEnergyBiddingMarket.MarketCleared(correctHour, testPrice);
 
         market.clearMarketWithSortedBids(correctHour, sortedIndices);
     }
 
     function test_MarketCleared_ViaPastHour() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -140,7 +140,7 @@ contract EventEmissionsTest is BaseTest {
         vm.warp(clearHour);
 
         vm.expectEmit(true, false, false, true);
-        emit IEnergyBiddingMarket.MarketCleared(correctHour, minimumPrice);
+        emit IEnergyBiddingMarket.MarketCleared(correctHour, testPrice);
 
         market.clearMarketPastHour();
     }
@@ -149,12 +149,12 @@ contract EventEmissionsTest is BaseTest {
 
     function test_BalanceClaimed_ViaClaimBalance() public {
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 0);
 
-        uint256 expectedBalance = minimumPrice * 100;
+        uint256 expectedBalance = testPrice * 100;
 
         vm.expectEmit(true, true, false, true);
         emit IEnergyBiddingMarket.BalanceClaimed(BIDDER, BIDDER, expectedBalance);
@@ -165,12 +165,12 @@ contract EventEmissionsTest is BaseTest {
 
     function test_BalanceClaimed_ViaClaimBalanceTo() public {
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 0);
 
-        uint256 expectedBalance = minimumPrice * 100;
+        uint256 expectedBalance = testPrice * 100;
         address payable recipient = payable(makeAddr("recipient"));
 
         vm.expectEmit(true, true, false, true);
@@ -185,9 +185,9 @@ contract EventEmissionsTest is BaseTest {
     function test_BidRefunded_NoEnergy() public {
         // Place bid but no asks -> all bids get refunded
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
-        uint256 expectedRefund = minimumPrice * 100;
+        uint256 expectedRefund = testPrice * 100;
 
         vm.expectEmit(true, true, true, true);
         emit IEnergyBiddingMarket.BidRefunded(correctHour, 0, BIDDER, expectedRefund);
@@ -199,9 +199,9 @@ contract EventEmissionsTest is BaseTest {
     function test_BidRefunded_PartialEnergy() public {
         // Place 2 bids, but only enough energy for 1
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 2 * 100}(correctHour, 100); // higher price, index 0
+        market.placeBid{value: testPrice * 2 * 100}(correctHour, 100); // higher price, index 0
         vm.prank(BIDDER2);
-        market.placeBid{value: minimumPrice * 50}(correctHour, 50); // lower price, index 1
+        market.placeBid{value: testPrice * 50}(correctHour, 50); // lower price, index 1
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -210,7 +210,7 @@ contract EventEmissionsTest is BaseTest {
         vm.warp(clearHour);
 
         // Bid 1 (BIDDER2) should be refunded since all energy goes to bid 0
-        uint256 expectedRefund = minimumPrice * 50;
+        uint256 expectedRefund = testPrice * 50;
 
         vm.expectEmit(true, true, true, true);
         emit IEnergyBiddingMarket.BidRefunded(correctHour, 1, BIDDER2, expectedRefund);
@@ -221,10 +221,10 @@ contract EventEmissionsTest is BaseTest {
     function test_BidRefunded_MultipleRefunds() public {
         // Place 3 bids at different prices
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 3 * 30}(correctHour, 30); // index 0, price 3x
+        market.placeBid{value: testPrice * 3 * 30}(correctHour, 30); // index 0, price 3x
         vm.prank(BIDDER2);
-        market.placeBid{value: minimumPrice * 2 * 40}(correctHour, 40); // index 1, price 2x
-        market.placeBid{value: minimumPrice * 50}(correctHour, 50);     // index 2, price 1x
+        market.placeBid{value: testPrice * 2 * 40}(correctHour, 40); // index 1, price 2x
+        market.placeBid{value: testPrice * 50}(correctHour, 50);     // index 2, price 1x
 
         vm.warp(askHour);
         vm.prank(SELLER);

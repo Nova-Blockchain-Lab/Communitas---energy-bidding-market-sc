@@ -39,9 +39,7 @@ deploy-arbitrum-sepolia:
 
 deploy-multi-region:
 	@if [ -z "$(PRIVATE_KEY)" ]; then echo "Error: PRIVATE_KEY not set"; exit 1; fi
-	@if [ -z "$(ALCHEMY_KEY)" ]; then echo "Error: ALCHEMY_KEY not set"; exit 1; fi
-	forge script ./script/DeployAndUpdateFE.s.sol \
-		--rpc-url https://arb-sepolia.g.alchemy.com/v2/$(ALCHEMY_KEY) \
+	forge script ./script/DeployMultiRegion.s.sol \
+		--rpc-url $(NOVA_CIDADE_RPC) \
 		--broadcast \
-		--private-key $(PRIVATE_KEY) \
-		--verify
+		--private-key $(PRIVATE_KEY)
