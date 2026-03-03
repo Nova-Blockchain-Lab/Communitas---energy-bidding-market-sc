@@ -23,12 +23,12 @@ contract ClaimBalanceTest is BaseTest {
     function test_claimBalance_Success() public {
         // Place bid and cancel to generate claimable balance
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 0);
 
-        uint256 expectedBalance = minimumPrice * 100;
+        uint256 expectedBalance = testPrice * 100;
         assertEq(market.claimableBalance(BIDDER), expectedBalance);
 
         uint256 bidderBalanceBefore = BIDDER.balance;
@@ -56,12 +56,12 @@ contract ClaimBalanceTest is BaseTest {
     function test_claimBalanceTo_Success() public {
         // Place bid and cancel to generate claimable balance
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 0);
 
-        uint256 expectedBalance = minimumPrice * 100;
+        uint256 expectedBalance = testPrice * 100;
         address payable recipient = payable(makeAddr("recipient"));
         uint256 recipientBalanceBefore = recipient.balance;
 
@@ -75,7 +75,7 @@ contract ClaimBalanceTest is BaseTest {
     function test_claimBalanceTo_ZeroAddress() public {
         // Generate a claimable balance first
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 0);
@@ -103,12 +103,12 @@ contract ClaimBalanceTest is BaseTest {
     function test_claimBalanceTo_EmitsBalanceClaimed() public {
         // Place bid and cancel to generate claimable balance
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 0);
 
-        uint256 expectedBalance = minimumPrice * 100;
+        uint256 expectedBalance = testPrice * 100;
         address payable recipient = payable(makeAddr("recipient"));
 
         vm.expectEmit(true, true, false, true);
@@ -121,12 +121,12 @@ contract ClaimBalanceTest is BaseTest {
     function test_claimBalance_EmitsBalanceClaimed() public {
         // Place bid and cancel to generate claimable balance
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         market.cancelBid(correctHour, 0);
 
-        uint256 expectedBalance = minimumPrice * 100;
+        uint256 expectedBalance = testPrice * 100;
 
         vm.expectEmit(true, true, false, true);
         emit IEnergyBiddingMarket.BalanceClaimed(BIDDER, BIDDER, expectedBalance);
@@ -140,7 +140,7 @@ contract ClaimBalanceTest is BaseTest {
     function test_claimBalanceTo_AfterMarketClearing() public {
         // Place bid
         vm.prank(BIDDER);
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: testPrice * 100}(correctHour, 100);
 
         // Place ask
         vm.warp(askHour);
@@ -168,13 +168,13 @@ contract ClaimBalanceTest is BaseTest {
     function test_claimBalanceTo_MultipleClaims() public {
         // Generate balance via two canceled bids
         vm.startPrank(BIDDER);
-        market.placeBid{value: minimumPrice * 50}(correctHour, 50);
-        market.placeBid{value: minimumPrice * 75}(correctHour, 75);
+        market.placeBid{value: testPrice * 50}(correctHour, 50);
+        market.placeBid{value: testPrice * 75}(correctHour, 75);
         market.cancelBid(correctHour, 0);
         market.cancelBid(correctHour, 1);
         vm.stopPrank();
 
-        uint256 expectedBalance = minimumPrice * 125;
+        uint256 expectedBalance = testPrice * 125;
         assertEq(market.claimableBalance(BIDDER), expectedBalance);
 
         address payable recipient = payable(makeAddr("recipient"));

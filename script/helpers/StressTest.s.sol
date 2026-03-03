@@ -17,7 +17,7 @@ contract StressTest is Script {
         EnergyBiddingMarket market = deployer.run();
 
         uint256 correctHour = (block.timestamp / 3600) * 3600 + 3600;
-        uint256 minimumPrice = market.MIN_PRICE();
+        uint256 testPrice = 1e12;
 
         vm.startBroadcast();
 
@@ -25,7 +25,7 @@ contract StressTest is Script {
         market.whitelistSeller(address(this), true);
 
         uint256 loops = 5000;
-        uint256 bidPrice = minimumPrice + 1e9;
+        uint256 bidPrice = testPrice + 1e9;
         uint256 smallAskAmount = 1;
         uint256 smallBidAmount = 2;
 

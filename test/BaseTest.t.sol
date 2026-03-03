@@ -21,7 +21,9 @@ abstract contract BaseTest is Test {
     uint256 internal correctHour;
     uint256 internal askHour;
     uint256 internal clearHour;
-    uint256 internal minimumPrice;
+    /// @notice Default test price per Watt for bid tests (1e12 wei/Watt).
+    uint256 internal testPrice;
+    uint256 internal defaultTestPrice = 1e12;
     uint256 internal bidAmount;
 
     function setUp() public virtual {
@@ -33,7 +35,7 @@ abstract contract BaseTest is Test {
         correctHour = (block.timestamp / 3600) * 3600 + 3600;
         askHour = correctHour + 1;
         clearHour = askHour + 3600;
-        minimumPrice = market.MIN_PRICE();
+        testPrice = defaultTestPrice;
         bidAmount = 100;
 
         vm.deal(address(0xBEEF), 1000 ether);

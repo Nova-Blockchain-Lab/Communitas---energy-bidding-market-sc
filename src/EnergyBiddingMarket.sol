@@ -15,7 +15,6 @@ import {
     EnergyBiddingMarket__MarketAlreadyClearedForThisHour,
     EnergyBiddingMarket__NoClaimableBalance,
     EnergyBiddingMarket__OnlyBidOwnerCanCancel,
-    EnergyBiddingMarket__BidMinimumPriceNotMet,
     EnergyBiddingMarket__AmountCannotBeZero,
     EnergyBiddingMarket__BidIsAlreadyCanceled,
     EnergyBiddingMarket__SellerIsNotWhitelisted,
@@ -40,10 +39,6 @@ contract EnergyBiddingMarket is
     IEnergyBiddingMarket
 {
     // ============ Constants ============
-
-    /// @notice Minimum price per Watt in wei (0.000001 ETH per Watt)
-    /// @dev Approximately $0.003 USD at current prices
-    uint256 public constant MIN_PRICE = 1e12;
 
     /// @notice Number of seconds in one hour
     uint256 private constant SECONDS_PER_HOUR = 3600;
@@ -396,9 +391,6 @@ contract EnergyBiddingMarket is
     ) internal assertExactHour(hour) isMarketNotCleared(hour) {
         if (hour <= block.timestamp) {
             revert EnergyBiddingMarket__WrongHourProvided(hour);
-        }
-        if (price < MIN_PRICE) {
-            revert EnergyBiddingMarket__BidMinimumPriceNotMet(price, MIN_PRICE);
         }
 
         uint256 totalBids = totalBidsByHour[hour];

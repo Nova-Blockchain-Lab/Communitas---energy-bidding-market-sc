@@ -69,8 +69,8 @@ forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVA
 ### For Buyers
 
 ```solidity
-// Place a single bid for 1000 Watts at minimum price
-market.placeBid{value: MIN_PRICE * 1000}(hour, 1000);
+// Place a single bid for 1000 Watts
+market.placeBid{value: pricePerWatt * 1000}(hour, 1000);
 
 // Place bids for multiple hours (range)
 market.placeMultipleBids{value: totalValue}(startHour, endHour, amount);
@@ -195,7 +195,6 @@ Saves ~20,000 gas per bid/ask.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `MIN_PRICE` | 1e12 wei | Minimum price per Watt |
 | `uint88 max` | ~3.09e26 | Max amount/price value |
 
 ## Security

@@ -17,7 +17,7 @@ contract PriceCalculationFuzzTest is BaseTest {
         vm.assume(bidAmount > 0 && bidAmount < 1e12);
         vm.assume(askAmount > 0 && askAmount < 1e12);
 
-        uint256 price = minimumPrice * 2; // 2x minimum
+        uint256 price = defaultTestPrice * 2; // 2x minimum
 
         // Place bid
         uint256 totalValue = price * uint256(bidAmount);
@@ -49,7 +49,7 @@ contract PriceCalculationFuzzTest is BaseTest {
         vm.assume(askAmount > 0 && askAmount < 1e12);
         priceMultiplier = bound(priceMultiplier, 1, 100);
 
-        uint256 price = minimumPrice * priceMultiplier;
+        uint256 price = defaultTestPrice * priceMultiplier;
 
         // Place bid
         uint256 totalValue = price * uint256(bidAmount);
@@ -67,7 +67,8 @@ contract PriceCalculationFuzzTest is BaseTest {
 
         // Verify clearing price is at least minimum price
         uint256 clearingPrice = market.clearingPricePerHour(correctHour);
-        assertGe(clearingPrice, minimumPrice);
+        // Clearing price can be any value >= 0
+        assertGe(clearingPrice, 0);
     }
 
     /// @notice Fuzz test: total payments match total matched energy * clearing price
@@ -79,7 +80,7 @@ contract PriceCalculationFuzzTest is BaseTest {
         vm.assume(bidAmount > 0 && bidAmount < 1e9);
         vm.assume(askAmount > 0 && askAmount < 1e9);
 
-        uint256 price = minimumPrice * 2;
+        uint256 price = defaultTestPrice * 2;
 
         // Place bid
         uint256 totalValue = price * uint256(bidAmount);
@@ -114,7 +115,7 @@ contract PriceCalculationFuzzTest is BaseTest {
         vm.assume(askAmount > 0 && askAmount < 1e9);
         priceMultiplier = bound(priceMultiplier, 1, 100);
 
-        uint256 bidPrice = minimumPrice * priceMultiplier;
+        uint256 bidPrice = defaultTestPrice * priceMultiplier;
 
         // Place bid
         uint256 totalValue = bidPrice * uint256(bidAmount);
@@ -151,9 +152,9 @@ contract PriceCalculationFuzzTest is BaseTest {
         price2Mult = bound(price2Mult, 1, 100);
         price3Mult = bound(price3Mult, 1, 100);
 
-        uint256 price1 = minimumPrice * price1Mult;
-        uint256 price2 = minimumPrice * price2Mult;
-        uint256 price3 = minimumPrice * price3Mult;
+        uint256 price1 = defaultTestPrice * price1Mult;
+        uint256 price2 = defaultTestPrice * price2Mult;
+        uint256 price3 = defaultTestPrice * price3Mult;
 
         uint256 amount = 100;
 
@@ -179,7 +180,7 @@ contract PriceCalculationFuzzTest is BaseTest {
     function testFuzz_amount_Uint88Bounds(uint256 rawAmount) public {
         // Bound to uint88 max
         uint256 amount = bound(rawAmount, 1, type(uint88).max);
-        uint256 price = minimumPrice;
+        uint256 price = defaultTestPrice;
 
         // May revert due to insufficient funds or overflow
         uint256 totalValue = price * amount;
@@ -196,8 +197,8 @@ contract PriceCalculationFuzzTest is BaseTest {
 
     /// @notice Fuzz test: price within uint88 bounds
     function testFuzz_price_Uint88Bounds(uint256 rawPrice) public {
-        // Price must be >= minimumPrice
-        uint256 price = bound(rawPrice, minimumPrice, type(uint88).max);
+        // Price must be > 0 for meaningful test
+        uint256 price = bound(rawPrice, 1, type(uint88).max);
         uint256 amount = 100;
 
         uint256 totalValue = price * amount;

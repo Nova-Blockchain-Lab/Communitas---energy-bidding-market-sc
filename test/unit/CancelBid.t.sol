@@ -14,7 +14,7 @@ import {
 contract CancelBidTest is BaseTest {
     function test_cancelBid_Success() public {
         uint256 bidAmount = 100;
-        uint256 totalValue = minimumPrice * bidAmount;
+        uint256 totalValue = defaultTestPrice * bidAmount;
 
         // Fund this contract
         vm.deal(address(this), totalValue * 2);
@@ -41,7 +41,7 @@ contract CancelBidTest is BaseTest {
     receive() external payable {}
 
     function test_cancelBid_NotOwner() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
 
         vm.prank(BIDDER);
         vm.expectRevert(
@@ -55,7 +55,7 @@ contract CancelBidTest is BaseTest {
     }
 
     function test_cancelBid_AlreadyCanceled() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
         market.cancelBid(correctHour, 0);
 
         vm.expectRevert(
@@ -69,7 +69,7 @@ contract CancelBidTest is BaseTest {
     }
 
     function test_cancelBid_MarketCleared() public {
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
 
         vm.warp(askHour);
         vm.prank(SELLER);
@@ -100,9 +100,9 @@ contract CancelBidTest is BaseTest {
 
     function test_cancelBid_MultipleBids() public {
         // Place 3 bids
-        market.placeBid{value: minimumPrice * 100}(correctHour, 100);
-        market.placeBid{value: minimumPrice * 200}(correctHour, 200);
-        market.placeBid{value: minimumPrice * 300}(correctHour, 300);
+        market.placeBid{value: defaultTestPrice * 100}(correctHour, 100);
+        market.placeBid{value: defaultTestPrice * 200}(correctHour, 200);
+        market.placeBid{value: defaultTestPrice * 300}(correctHour, 300);
 
         // Cancel the middle one
         market.cancelBid(correctHour, 1);
@@ -119,8 +119,8 @@ contract CancelBidTest is BaseTest {
 
     function test_cancelBid_ExcludedFromClearing() public {
         // Place 2 bids
-        market.placeBid{value: minimumPrice * 2 * 100}(correctHour, 100); // Higher price
-        market.placeBid{value: minimumPrice * 50}(correctHour, 50); // Lower price
+        market.placeBid{value: defaultTestPrice * 2 * 100}(correctHour, 100); // Higher price
+        market.placeBid{value: defaultTestPrice * 50}(correctHour, 50); // Lower price
 
         // Cancel the higher price bid
         market.cancelBid(correctHour, 0);
@@ -134,6 +134,6 @@ contract CancelBidTest is BaseTest {
 
         // Clearing price should be based on the remaining bid
         uint256 clearingPrice = market.clearingPricePerHour(correctHour);
-        assertEq(clearingPrice, minimumPrice);
+        assertEq(clearingPrice, defaultTestPrice);
     }
 }

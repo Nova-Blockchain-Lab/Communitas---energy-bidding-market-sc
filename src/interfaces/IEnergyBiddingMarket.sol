@@ -182,10 +182,6 @@ interface IEnergyBiddingMarket {
     /// @return The Unix timestamp of the start of the current hour
     function getCurrentHourTimestamp() external view returns (uint256);
 
-    /// @notice Returns the minimum price per Watt
-    /// @return The minimum price in wei
-    function MIN_PRICE() external view returns (uint256);
-
     /// @notice Checks if a seller is whitelisted
     /// @param seller The address to check
     /// @return True if whitelisted
